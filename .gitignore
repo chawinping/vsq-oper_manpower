@@ -1,0 +1,41 @@
+# Environment files - NEVER commit these!
+.env
+.env.local
+.env.staging
+.env.production
+.env.*.local
+
+# SSL Certificates - NEVER commit these!
+nginx/ssl/**/*.pem
+nginx/ssl/**/*.key
+nginx/ssl/**/*.crt
+nginx/ssl/**/*.p12
+
+# Backups
+backups/
+*.sql
+*.sql.zip
+
+# Docker
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+nginx/logs/*
+
+# Temporary files
+tmp/
+temp/
+
+

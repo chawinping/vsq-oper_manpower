@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-neutral-border;
+  }
+  
+  body {
+    @apply bg-neutral-bg-primary text-neutral-text-primary font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-neutral-text-primary font-semibold;
+  }
+
+  h1 {
+    @apply text-2xl;
+  }
+
+  h2 {
+    @apply text-xl;
+  }
+
+  h3 {
+    @apply text-lg;
+  }
+}
+
+@layer components {
+  /* Salesforce-style button */
+  .btn-primary {
+    @apply px-4 py-2 bg-salesforce-blue text-white rounded border-0 shadow-salesforce;
+    @apply hover:bg-salesforce-blue-hover transition-colors duration-150;
+    @apply focus:outline-none focus:ring-2 focus:ring-salesforce-blue focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-neutral-bg-secondary text-neutral-text-primary rounded border border-neutral-border shadow-salesforce;
+    @apply hover:bg-neutral-hover transition-colors duration-150;
+    @apply focus:outline-none focus:ring-2 focus:ring-salesforce-blue focus:ring-offset-2;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 bg-red-600 text-white rounded border-0 shadow-salesforce;
+    @apply hover:bg-red-700 transition-colors duration-150;
+    @apply focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  /* Salesforce-style input */
+  .input-field {
+    @apply w-full px-3 py-2 bg-neutral-bg-secondary border border-neutral-border rounded;
+    @apply text-neutral-text-primary placeholder-neutral-text-secondary;
+    @apply focus:outline-none focus:ring-2 focus:ring-salesforce-blue focus:border-salesforce-blue;
+    @apply disabled:bg-neutral-hover disabled:cursor-not-allowed;
+    font-size: 14px;
+  }
+
+  /* Salesforce-style card */
+  .card {
+    @apply bg-neutral-bg-secondary rounded shadow-salesforce border border-neutral-border;
+  }
+
+  /* Salesforce-style table */
+  .table-salesforce {
+    @apply w-full border-collapse;
+  }
+
+  .table-salesforce thead {
+    @apply bg-neutral-hover;
+  }
+
+  .table-salesforce th {
+    @apply px-4 py-3 text-left text-xs font-semibold text-neutral-text-secondary uppercase tracking-wider border-b border-neutral-border;
+  }
+
+  .table-salesforce td {
+    @apply px-4 py-3 text-sm text-neutral-text-primary border-b border-neutral-border;
+  }
+
+  .table-salesforce tbody tr {
+    @apply hover:bg-neutral-hover transition-colors;
+  }
+
+  /* Salesforce-style badge */
+  .badge {
+    @apply inline-flex items-center px-2 py-1 text-xs font-medium rounded;
+  }
+
+  .badge-primary {
+    @apply bg-salesforce-blue-light text-salesforce-blue-dark;
+  }
+
+  .badge-secondary {
+    @apply bg-neutral-hover text-neutral-text-primary;
+  }
+}
+

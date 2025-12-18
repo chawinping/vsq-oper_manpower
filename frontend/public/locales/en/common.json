@@ -1,0 +1,64 @@
+{
+  "common": {
+    "login": "Login",
+    "logout": "Logout",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Submit",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "filter": "Filter",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "staff": "Staff",
+    "branches": "Branches",
+    "scheduling": "Scheduling",
+    "rotation": "Rotation Staff",
+    "settings": "Settings"
+  },
+  "staff": {
+    "title": "Staff Management",
+    "name": "Name",
+    "type": "Type",
+    "position": "Position",
+    "branch": "Branch",
+    "coverageArea": "Coverage Area",
+    "branchStaff": "Branch Staff",
+    "rotationStaff": "Rotation Staff"
+  },
+  "branch": {
+    "title": "Branch Management",
+    "name": "Name",
+    "code": "Code",
+    "address": "Address",
+    "expectedRevenue": "Expected Revenue",
+    "priority": "Priority"
+  },
+  "schedule": {
+    "title": "Staff Scheduling",
+    "monthlyView": "Monthly View",
+    "workingDay": "Working Day",
+    "offDay": "Off Day",
+    "date": "Date"
+  },
+  "rotation": {
+    "title": "Rotation Staff Assignment",
+    "assign": "Assign",
+    "remove": "Remove",
+    "level1": "Level 1 (Priority)",
+    "level2": "Level 2 (Reserved)",
+    "viewByBranch": "View by Branch",
+    "viewByStaff": "View by Staff",
+    "viewByArea": "View by Area"
+  }
+}
+
+

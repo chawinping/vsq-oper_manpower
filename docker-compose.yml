@@ -1,0 +1,133 @@
+services:
+  postgres:
+    profiles: ["fullstack", "dev", "fullstack-dev"]
+    image: postgres:15-alpine
+    container_name: vsq-manpower-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-vsq_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-vsq_password}
+      POSTGRES_DB: ${DB_NAME:-vsq_manpower}
+    ports:
+      - "${DB_PORT:-5434}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vsq_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    profiles: ["fullstack"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vsq-manpower-backend
+    ports:
+      - "${BACKEND_PORT:-8081}:8080"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-vsq_user}
+      DB_PASSWORD: ${DB_PASSWORD:-vsq_password}
+      DB_NAME: ${DB_NAME:-vsq_manpower}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      PORT: 8080
+      GIN_MODE: release
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4000,http://localhost:3000}
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-}
+      MCP_API_KEY: ${MCP_API_KEY:-}
+      MCP_ENABLED: ${MCP_ENABLED:-false}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend-dev:
+    profiles: ["dev", "fullstack-dev"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: vsq-manpower-backend-dev
+    ports:
+      - "8081:8080"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: vsq_user
+      DB_PASSWORD: vsq_password
+      DB_NAME: vsq_manpower
+      DB_SSLMODE: disable
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      PORT: 8080
+      GIN_MODE: debug
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4000,http://localhost:3000}
+    volumes:
+      - ./backend:/app
+      - /app/tmp
+      - /app/vendor
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    profiles: ["fullstack"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vsq-manpower-frontend
+    ports:
+      - "${FRONTEND_PORT:-4000}:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8081/api}
+      NODE_ENV: production
+      PORT: 3000
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend-dev:
+    profiles: ["fullstack-dev"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vsq-manpower-frontend-dev
+    ports:
+      - "${FRONTEND_PORT:-4000}:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8081/api}
+      NODE_ENV: production
+      PORT: 3000
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      backend-dev:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+

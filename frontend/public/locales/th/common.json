@@ -1,0 +1,64 @@
+{
+  "common": {
+    "login": "เข้าสู่ระบบ",
+    "logout": "ออกจากระบบ",
+    "username": "ชื่อผู้ใช้",
+    "password": "รหัสผ่าน",
+    "submit": "ส่ง",
+    "cancel": "ยกเลิก",
+    "save": "บันทึก",
+    "delete": "ลบ",
+    "edit": "แก้ไข",
+    "create": "สร้าง",
+    "search": "ค้นหา",
+    "filter": "กรอง",
+    "loading": "กำลังโหลด...",
+    "error": "ข้อผิดพลาด",
+    "success": "สำเร็จ"
+  },
+  "nav": {
+    "dashboard": "แดชบอร์ด",
+    "staff": "พนักงาน",
+    "branches": "สาขา",
+    "scheduling": "ตารางงาน",
+    "rotation": "พนักงานหมุนเวียน",
+    "settings": "ตั้งค่า"
+  },
+  "staff": {
+    "title": "จัดการพนักงาน",
+    "name": "ชื่อ",
+    "type": "ประเภท",
+    "position": "ตำแหน่ง",
+    "branch": "สาขา",
+    "coverageArea": "พื้นที่รับผิดชอบ",
+    "branchStaff": "พนักงานประจำสาขา",
+    "rotationStaff": "พนักงานหมุนเวียน"
+  },
+  "branch": {
+    "title": "จัดการสาขา",
+    "name": "ชื่อ",
+    "code": "รหัส",
+    "address": "ที่อยู่",
+    "expectedRevenue": "รายได้ที่คาดหวัง",
+    "priority": "ลำดับความสำคัญ"
+  },
+  "schedule": {
+    "title": "ตารางงานพนักงาน",
+    "monthlyView": "มุมมองรายเดือน",
+    "workingDay": "วันทำงาน",
+    "offDay": "วันหยุด",
+    "date": "วันที่"
+  },
+  "rotation": {
+    "title": "การมอบหมายพนักงานหมุนเวียน",
+    "assign": "มอบหมาย",
+    "remove": "ลบ",
+    "level1": "ระดับ 1 (ลำดับความสำคัญ)",
+    "level2": "ระดับ 2 (สำรอง)",
+    "viewByBranch": "ดูตามสาขา",
+    "viewByStaff": "ดูตามพนักงาน",
+    "viewByArea": "ดูตามพื้นที่"
+  }
+}
+
+

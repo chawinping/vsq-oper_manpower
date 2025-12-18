@@ -1,0 +1,417 @@
+---
+description: VSQ Operations Manpower Project - Cursor Rules
+alwaysApply: true
+lastUpdated: 2025-12-15 18:24:27
+---
+
+# VSQ Operations Manpower - Cursor Rules
+
+## Operating System
+- I am working on a Windows 11 laptop.
+- All shell commands should use PowerShell or Command Prompt syntax.
+- Avoid providing instructions for macOS or Linux unless explicitly requested.
+
+---
+
+## 1. Documentation-First Development
+
+**Rule:** Check documentation before implementing features
+
+Before implementing any feature:
+1. Check `requirements.md` or `docs/requirements.md` for existing requirements
+2. Check `docs/` directory for relevant documentation
+3. If requirements don't exist, create or update them first
+4. Reference requirement IDs when implementing
+
+**Why it's reusable:** Prevents duplicate work, ensures alignment with project goals, maintains documentation quality.
+
+---
+
+## 2. Requirement Checking
+
+**Rule:** Verify requirements exist before coding
+
+Before writing code for a new feature:
+- Check if requirement exists in `requirements.md` or `docs/requirements.md`
+- If requirement doesn't exist, ask user if they want to:
+  1. Create the requirement first, or
+  2. Proceed with implementation and document later
+- Always reference requirement ID in code comments and commit messages
+
+**Why it's reusable:** Ensures traceability, prevents scope creep, maintains project organization.
+
+---
+
+## 3. Markdown File Standards
+
+**Rule:** Standardize markdown file format
+
+All markdown files should follow this structure:
+
+```markdown
+---
+title: Document Title
+description: Brief description
+version: 1.0.0
+lastUpdated: YYYY-MM-DD
+---
+
+# Document Title
+
+## Overview
+...
+
+## Sections
+...
+```
+
+**Why it's reusable:** Consistent documentation structure, easier navigation, better maintainability.
+
+---
+
+## 4. Version Management
+
+**Rule:** Automatic version updates for components
+
+When updating version numbers:
+- Check `package.json` (frontend/backend) for current version
+- Use semantic versioning (MAJOR.MINOR.PATCH)
+- Update version in:
+  - `package.json` files
+  - `requirements.md` (if version tracking is used)
+  - Component-specific version files
+- Update `CHANGELOG.md` with version changes
+
+**Why it's reusable:** Maintains version consistency, helps with release management, tracks changes.
+
+---
+
+## 5. Git Commit Standards
+
+**Rule:** Reference IDs in commit messages
+
+Commit messages should follow this format:
+
+```
+[Type] [Requirement-ID]: Brief description
+
+- Detailed change 1
+- Detailed change 2
+
+Related: #issue-number
+```
+
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+
+Example:
+```
+feat FR-SM-01: Add user authentication service
+
+- Implement JWT token generation
+- Add password hashing with bcrypt
+- Create user login endpoint
+
+Related: #123
+```
+
+**Why it's reusable:** Enables traceability, makes git history searchable, links commits to requirements.
+
+---
+
+## 6. Code Quality Standards
+
+**Rule:** Enforce code quality standards
+
+All code should:
+- Include error handling for external calls
+- Validate input parameters
+- Include type hints/annotations where applicable
+- Follow project-specific linting rules
+- Include unit tests for business logic
+- Use consistent naming conventions
+- Include inline comments for complex logic
+
+**Why it's reusable:** Maintains code quality, reduces bugs, improves maintainability.
+
+---
+
+## 7. Business Rule Enforcement
+
+**Rule:** Document and test business rules
+
+When implementing business rules:
+- Document the rule in `requirements.md` or `docs/business-rules.md`
+- Assign a Business Rule ID (BR-[Module]-[Number])
+- Write unit tests that verify the rule
+- Add comments in code referencing the BR-ID
+- Update tests when rules change
+
+**Why it's reusable:** Ensures business logic correctness, enables rule verification, maintains compliance.
+
+---
+
+## 8. Documentation Updates
+
+**Rule:** Update relevant documentation when code changes
+
+When code changes affect:
+- **Business logic** → Update requirements document
+- **API endpoints** → Update API documentation/swagger
+- **Deployment** → Update deployment guide
+- **Development** → Update development guide
+- **Major changes** → Update CHANGELOG.md
+- **Security** → Reference security guide
+- **Performance** → Reference performance guide
+- **Database schema** → Update database schema documentation
+
+**Why it's reusable:** Keeps documentation in sync with code, reduces knowledge gaps.
+
+---
+
+## 9. Status Indicators
+
+**Rule:** Use consistent status indicators
+
+Use these consistently in requirements/planning documents:
+- ✅ **Implemented** - Feature complete and tested
+- ⚠️ **Partially Implemented** - Basic functionality exists, needs enhancement
+- ❌ **Not Implemented** - Planned but not yet started
+
+**Why it's reusable:** Provides clear visual status tracking, improves project visibility.
+
+---
+
+## 10. Requirement ID Format
+
+**Rule:** Use consistent ID format for traceability
+
+Use consistent format for traceability:
+- **Functional Requirements:** `FR-[Module]-[Number]`
+  - Example: `FR-SM-01` = Functional Requirement, Service Management, #01
+- **Business Rules:** `BR-[Module]-[Number]`
+  - Example: `BR-BM-03` = Business Rule, Booking Management, #03
+- **Non-Functional Requirements:** `NFR-[Category]-[Number]`
+  - Example: `NFR-PF-01` = Non-Functional Requirement, Performance, #01
+
+**Why it's reusable:** Enables traceability, makes requirements searchable, links code to requirements.
+
+---
+
+## 11. Directory Verification
+
+**Rule:** Always verify current directory before running commands
+
+Always verify the current directory before running commands. Use `pwd` (PowerShell: `Get-Location`) to confirm location, especially when:
+- Running build commands
+- Executing deployment scripts
+- Running database migrations
+- Installing dependencies
+
+**Why it's reusable:** Prevents running commands in wrong directories, reduces errors.
+
+---
+
+## 12. Use Absolute Paths
+
+**Rule:** Use absolute paths when specifying files
+
+When running docker commands or specifying file paths:
+- Use absolute paths when possible
+- For Windows: Use full paths like `C:\Users\User\dev_projects\vsq-oper_manpower\...`
+- For relative paths, ensure they're relative to the project root
+- Document path assumptions in scripts
+
+**Why it's reusable:** Prevents path-related errors, works across different environments.
+
+---
+
+## 13. CHANGELOG Management
+
+**Rule:** Automatic CHANGELOG updates
+
+When completing a feature or making significant changes, update `CHANGELOG.md`.
+
+When user asks to "update CHANGELOG" or "add to CHANGELOG":
+- Analyze git history since last tag
+- Identify requirement/issue IDs
+- Categorize changes (Added/Changed/Fixed/Deprecated/Removed)
+- Generate appropriate version number
+- Write complete CHANGELOG entry
+- Update the file automatically
+
+**CHANGELOG Format:**
+```markdown
+## [Version] - YYYY-MM-DD
+
+### Added
+- Feature description (FR-XX-XX)
+
+### Changed
+- Change description
+
+### Fixed
+- Bug fix description
+
+### Deprecated
+- Deprecated feature
+
+### Removed
+- Removed feature
+```
+
+**Why it's reusable:** Maintains project history, improves release tracking, helps with communication.
+
+---
+
+## 14. When Unsure Protocol
+
+**Rule:** Clear protocol for handling uncertainty
+
+When unsure about implementation details:
+1. **Check requirements document first** (`requirements.md` or `docs/requirements.md`)
+2. Check existing codebase for similar patterns
+3. If unclear, ask user for clarification
+4. Update requirements document with clarification
+5. Then proceed with implementation
+
+**Why it's reusable:** Prevents incorrect assumptions, ensures alignment, maintains documentation.
+
+---
+
+## 15. Project Structure Awareness
+
+**Rule:** Be aware of project structure
+
+This project has:
+- `backend/` - Backend application code
+- `frontend/` - Frontend application code
+- `docs/` - Documentation (create if needed)
+- `requirements.md` - Project requirements (create if needed)
+- `CHANGELOG.md` - Project changelog (create if needed)
+
+When creating files:
+- Place backend code in `backend/`
+- Place frontend code in `frontend/`
+- Place documentation in `docs/` or root directory
+- Follow existing directory structure
+
+**Why it's reusable:** Maintains organization, prevents file clutter, improves navigation.
+
+---
+
+## 16. API Documentation Standards
+
+**Rule:** Document API endpoints consistently
+
+When creating or updating API endpoints:
+- Document in API documentation (Swagger/OpenAPI if applicable)
+- Include:
+  - Endpoint path and method
+  - Request/response schemas
+  - Authentication requirements
+  - Error responses
+  - Example requests/responses
+- Reference requirement ID (FR-XX-XX) in documentation
+
+**Why it's reusable:** Improves API usability, reduces integration errors, maintains consistency.
+
+---
+
+## 17. Testing Standards
+
+**Rule:** Write tests for new features
+
+When implementing features:
+- Write unit tests for business logic
+- Write integration tests for API endpoints
+- Write frontend component tests where applicable
+- Aim for meaningful test coverage
+- Update tests when requirements change
+
+**Why it's reusable:** Ensures code quality, prevents regressions, improves maintainability.
+
+---
+
+## 18. Security Best Practices
+
+**Rule:** Follow security best practices
+
+When handling sensitive data:
+- Never commit secrets or API keys
+- Use environment variables for configuration
+- Validate and sanitize all user inputs
+- Use parameterized queries for database operations
+- Implement proper authentication and authorization
+- Follow OWASP guidelines where applicable
+
+**Why it's reusable:** Prevents security vulnerabilities, protects user data, maintains compliance.
+
+---
+
+## 19. Timestamp Management
+
+**Rule:** Use current system date and time for timestamps
+
+When creating or updating files that require timestamps:
+- Always use the **current system date and time** (not a hardcoded date)
+- Format timestamps consistently: `YYYY-MM-DD HH:mm:ss` (simple format without T and Z)
+- For date-only fields: `YYYY-MM-DD`
+- Update timestamps when modifying existing files
+- Include timezone information when relevant (use UTC or Asia/Bangkok as specified)
+
+**Examples:**
+- Document headers: `lastUpdated: 2024-12-19 14:30:00`
+- Code comments: `// Updated: 2024-12-19 14:30:00`
+- Changelog entries: `## [Version] - 2024-12-19`
+- Database records: Use database `CURRENT_TIMESTAMP` or application server time
+
+**When to update timestamps:**
+- When creating new files (use current date/time)
+- When modifying existing files (update to current date/time)
+- When updating documentation (update lastUpdated field)
+- When making code changes that affect functionality (update relevant timestamps)
+
+**How to get current system date/time:**
+- PowerShell: `Get-Date -Format "yyyy-MM-dd HH:mm:ss"` or `(Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss")`
+- Command Prompt: Use system date/time
+- In code: Use language-specific date/time functions (e.g., Go: `time.Now().UTC().Format("2006-01-02 15:04:05")`, JavaScript: `new Date().toISOString().replace('T', ' ').slice(0, 19)`)
+- Always use UTC timezone for consistency unless specifically required otherwise
+
+**Why it's reusable:** Ensures accurate tracking of when files were created or modified, maintains audit trail, helps with version control and debugging.
+
+---
+
+## Quick Reference Checklist
+
+When working on this project, ensure:
+- [ ] Checked requirements document before implementing
+- [ ] Verified current directory before running commands
+- [ ] Used requirement IDs in code and commits
+- [ ] Updated relevant documentation
+- [ ] Used appropriate status indicators
+- [ ] Followed code quality standards
+- [ ] Updated CHANGELOG for significant changes
+- [ ] Used Windows-appropriate commands (PowerShell/CMD)
+- [ ] Used absolute paths when needed
+- [ ] Asked for clarification when unsure
+- [ ] Used current system date/time for timestamps (not hardcoded dates)
+- [ ] Updated timestamps when modifying files
+
+---
+
+## Module Abbreviations Reference
+
+Common module abbreviations for Requirement IDs:
+- **SM** - Service Management
+- **BM** - Booking Management
+- **UM** - User Management
+- **RM** - Resource Management
+- **RP** - Reporting
+- **AU** - Authentication
+- **AUZ** - Authorization
+- **PF** - Performance
+- **SC** - Security
+- **UI** - User Interface
+- **API** - API Integration
+
+Add more as project grows.
