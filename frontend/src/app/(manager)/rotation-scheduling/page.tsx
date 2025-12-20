@@ -15,14 +15,20 @@ export default function RotationSchedulingPage() {
     const fetchUser = async () => {
       try {
         const userData = await authApi.getMe();
+        if (!userData) {
+          throw new Error('User data not available');
+        }
         setUser(userData);
         
         // Check if user has permission
-        if (!['admin', 'area_manager', 'district_manager'].includes(userData.role)) {
+        if (!userData.role || !['admin', 'area_manager', 'district_manager'].includes(userData.role)) {
           router.push('/dashboard');
         }
-      } catch (error) {
-        router.push('/login');
+      } catch (error: any) {
+        console.error('Failed to fetch user:', error);
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login');
+        }
       } finally {
         setLoading(false);
       }

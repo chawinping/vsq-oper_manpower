@@ -1,16 +1,16 @@
 ---
 title: Software Requirements Specification
 description: Detailed requirements for VSQ Operations Manpower System
-version: 1.1.0
-lastUpdated: 2025-12-18 13:34:43
+version: 1.2.0
+lastUpdated: 2025-12-21 00:28:16
 ---
 
 # VSQ Operations Manpower - Software Requirements Specification
 
 ## Document Information
 
-- **Version:** 1.1.0
-- **Last Updated:** 2025-12-18 13:34:43
+- **Version:** 1.2.0
+- **Last Updated:** 2025-12-21 00:28:16
 - **Status:** Active
 
 ## Related Documents
@@ -109,6 +109,19 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
   - Expected revenue can be set per branch
   - Priority level can be assigned
   - Area Manager can be assigned to branches
+
+#### FR-BM-03: Standard Branch Codes
+- **Description:** System shall maintain a hardcoded list of standard branch codes that must always be available
+- **Status:** ✅ Implemented
+- **Details:**
+  - Standard branch codes are hardcoded in the system constants
+  - Standard branch codes cannot be deleted
+  - Standard branch codes cannot have their codes changed
+  - Standard branch codes must always be available in the system
+  - The following branch codes are standard and must always be available:
+    - CPN, CPN-LS, CTR, PNK, CNK, BNA, CLP, SQR, BKP, CMC, CSA, EMQ, ESV, GTW, MGA, MTA, PRM, RCT, RST, TMA, MBA, SCN, CWG, CRM, CWT, PSO, RCP, CRA, CTW, ONE, DCP, MNG, TLR, TLR-LS, TLR-WN
+  - Standard branch codes are defined in `backend/internal/constants/branches.go`
+  - Validation is enforced at the API level to prevent deletion or code modification of standard branches
 
 #### FR-BM-02: Revenue Tracking
 - **Description:** System shall track expected and actual revenue
@@ -365,5 +378,6 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
 |------|---------|---------|--------|
 | 2024-12-19 | 1.0.0 | Initial requirements document created | System |
 | 2025-12-18 | 1.1.0 | Added conflict resolution requirements, data validation, notifications, reporting. Added references to security and conflict resolution documents. Updated status of FR-BL-03. | System |
+| 2025-12-21 | 1.2.0 | Added FR-BM-03: Standard Branch Codes requirement. Documented hardcoded list of 35 standard branch codes that must always be available in the system. | System |
 
 

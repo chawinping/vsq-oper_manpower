@@ -25,8 +25,12 @@ export const authApi = {
   
   getMe: async () => {
     const response = await apiClient.get('/auth/me');
+    if (!response.data || !response.data.user) {
+      throw new Error('Invalid response format');
+    }
     return response.data.user as User;
   },
 };
+
 
 

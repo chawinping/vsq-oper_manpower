@@ -144,7 +144,7 @@ export default function MonthlyCalendar({ branchId }: MonthlyCalendarProps) {
             </tr>
           </thead>
           <tbody>
-            {staff.map((staffMember) => (
+            {(staff || []).map((staffMember) => (
               <tr key={staffMember.id}>
                 <td className="border border-neutral-border p-2 bg-neutral-bg-secondary sticky left-0 z-10 font-medium text-neutral-text-primary">
                   {staffMember.name}

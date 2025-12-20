@@ -27,9 +27,12 @@ export default function UsersManagementPage() {
     const fetchData = async () => {
       try {
         const userData = await authApi.getMe();
+        if (!userData) {
+          throw new Error('User data not available');
+        }
         setUser(userData);
         
-        if (userData.role !== 'admin') {
+        if (!userData.role || userData.role !== 'admin') {
           router.push('/dashboard');
           return;
         }
@@ -37,8 +40,11 @@ export default function UsersManagementPage() {
         await loadUsers();
         const rolesData = await roleApi.list();
         setRoles(rolesData || []);
-      } catch (error) {
-        router.push('/login');
+      } catch (error: any) {
+        console.error('Failed to fetch data:', error);
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login');
+        }
       } finally {
         setLoading(false);
       }
@@ -160,7 +166,7 @@ export default function UsersManagementPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((userItem) => (
+                {(users || []).map((userItem) => (
                   <tr key={userItem.id}>
                     <td className="font-medium">{userItem.username}</td>
                     <td>{userItem.email}</td>
@@ -256,7 +262,7 @@ export default function UsersManagementPage() {
                       className="input-field"
                     >
                       <option value="">Select Role</option>
-                      {roles.map((role) => (
+                      {(roles || []).map((role) => (
                         <option key={role.id} value={role.id}>
                           {role.name}
                         </option>

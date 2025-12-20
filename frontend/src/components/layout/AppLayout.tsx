@@ -37,8 +37,12 @@ export default function AppLayout({ children }: AppLayoutProps) {
       try {
         const userData = await authApi.getMe();
         setUser(userData);
-      } catch (error) {
-        router.push('/login');
+      } catch (error: any) {
+        console.error('Failed to fetch user:', error);
+        // Only redirect if not already on login page
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login');
+        }
       } finally {
         setLoading(false);
       }
@@ -57,7 +61,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   };
 
   const filteredNavItems = navItems.filter((item) => {
-    if (!item.roles || !user) return true;
+    if (!item.roles || !user || !user.role) return true;
     return item.roles.includes(user.role);
   });
 
@@ -132,9 +136,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <header className="h-16 bg-neutral-bg-secondary border-b border-neutral-border flex items-center justify-between px-6">
           <div className="flex-1"></div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-neutral-text-secondary">
-              {user?.username} <span className="text-neutral-text-primary">({user?.role})</span>
-            </span>
+            {user && (
+              <span className="text-sm text-neutral-text-secondary">
+                {user.username} <span className="text-neutral-text-primary">({user.role})</span>
+              </span>
+            )}
             <button
               onClick={handleLogout}
               className="btn-secondary text-sm"

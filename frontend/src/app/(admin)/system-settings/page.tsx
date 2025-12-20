@@ -24,16 +24,22 @@ export default function SystemSettingsPage() {
     const fetchData = async () => {
       try {
         const userData = await authApi.getMe();
+        if (!userData) {
+          throw new Error('User data not available');
+        }
         setUser(userData);
         
-        if (userData.role !== 'admin') {
+        if (!userData.role || userData.role !== 'admin') {
           router.push('/dashboard');
           return;
         }
 
         await loadSettings();
-      } catch (error) {
-        router.push('/login');
+      } catch (error: any) {
+        console.error('Failed to fetch data:', error);
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login');
+        }
       } finally {
         setLoading(false);
       }
@@ -139,7 +145,7 @@ export default function SystemSettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {settings.map((setting) => (
+                {(settings || []).map((setting) => (
                   <tr key={setting.id}>
                     <td className="font-medium">{setting.key}</td>
                     <td>

@@ -64,6 +64,7 @@ func main() {
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: sameSite,
+		// Don't set Domain for localhost - browsers handle it automatically
 	})
 	r.Use(sessions.Sessions("vsq_session", store))
 
@@ -126,6 +127,7 @@ func main() {
 				branches.GET("", h.Branch.List)
 				branches.POST("", middleware.RequireRole("admin", "area_manager", "district_manager"), h.Branch.Create)
 				branches.PUT("/:id", middleware.RequireRole("admin", "area_manager", "district_manager"), h.Branch.Update)
+				branches.DELETE("/:id", middleware.RequireRole("admin"), h.Branch.Delete)
 				branches.GET("/:id/revenue", h.Branch.GetRevenue)
 			}
 

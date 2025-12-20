@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"vsq-oper-manpower/backend/internal/constants"
 	"vsq-oper-manpower/backend/internal/domain/models"
 	"vsq-oper-manpower/backend/internal/repositories/postgres"
 )
@@ -70,9 +71,26 @@ func (h *BranchHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Get existing branch to check if it's a standard branch code
+	existingBranch, err := h.repos.Branch.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingBranch == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Branch not found"})
+		return
+	}
+
 	var req CreateBranchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Prevent changing code of standard branch codes
+	if constants.IsStandardBranchCode(existingBranch.Code) && req.Code != existingBranch.Code {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot change code of standard branch. Standard branch codes must remain unchanged."})
 		return
 	}
 
@@ -92,6 +110,39 @@ func (h *BranchHandler) Update(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"branch": branch})
+}
+
+func (h *BranchHandler) Delete(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	// Get branch to check if it's a standard branch code
+	branch, err := h.repos.Branch.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if branch == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Branch not found"})
+		return
+	}
+
+	// Prevent deletion of standard branch codes
+	if constants.IsStandardBranchCode(branch.Code) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot delete standard branch. Standard branch codes must always be available in the system."})
+		return
+	}
+
+	if err := h.repos.Branch.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Branch deleted successfully"})
 }
 
 func (h *BranchHandler) GetRevenue(c *gin.Context) {
@@ -131,5 +182,6 @@ func (h *BranchHandler) GetRevenue(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"revenue_data": revenues})
 }
+
 
 

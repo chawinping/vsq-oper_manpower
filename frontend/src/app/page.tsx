@@ -12,10 +12,13 @@ export default function Home() {
       try {
         await authApi.getMe();
         // User is authenticated, redirect to dashboard
-        router.push('/dashboard');
+        router.replace('/dashboard');
       } catch (error) {
         // User is not authenticated, redirect to login
-        router.push('/login');
+        // Only redirect if not already on login page to prevent loops
+        if (window.location.pathname !== '/login') {
+          router.replace('/login');
+        }
       }
     };
 

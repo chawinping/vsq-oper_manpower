@@ -3,6 +3,9 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
+	"vsq-oper-manpower/backend/internal/constants"
+
+	"github.com/google/uuid"
 )
 
 func RunMigrations(db *sql.DB) error {
@@ -26,6 +29,11 @@ func RunMigrations(db *sql.DB) error {
 		if _, err := db.Exec(migration); err != nil {
 			return fmt.Errorf("migration failed: %w", err)
 		}
+	}
+
+	// Seed standard branch codes
+	if err := SeedStandardBranches(db); err != nil {
+		return fmt.Errorf("failed to seed standard branches: %w", err)
 	}
 
 	return nil
@@ -183,4 +191,43 @@ INSERT INTO positions (id, name, min_staff_per_branch, revenue_multiplier) VALUE
 ON CONFLICT (id) DO NOTHING;
 `
 
+// SeedStandardBranches seeds the database with standard branch codes.
+// This ensures all standard branch codes (FR-BM-03) are always available in the system.
+func SeedStandardBranches(db *sql.DB) error {
+	// Generate deterministic UUIDs for each branch code
+	// Using a base UUID pattern: 20000000-0000-0000-0000-XXXXXXXXXXXX
+	// where X is a sequential hex number
+	baseUUID := uuid.MustParse("20000000-0000-0000-0000-000000000000")
+	
+	standardCodes := constants.GetStandardBranchCodes()
+	
+	// Prepare the insert statement
+	stmt := `INSERT INTO branches (id, name, code, address, expected_revenue, priority) 
+	         VALUES ($1, $2, $3, $4, $5, $6)
+	         ON CONFLICT (code) DO NOTHING`
+	
+	for _, code := range standardCodes {
+		// Generate deterministic UUID for this branch code using SHA1 hash
+		// This ensures the same branch code always gets the same UUID
+		branchID := uuid.NewSHA1(baseUUID, []byte(code))
+		
+		// Branch name defaults to code if not specified
+		branchName := code
+		
+		// Insert branch with default values
+		_, err := db.Exec(stmt,
+			branchID,
+			branchName,
+			code,
+			"", // address - can be updated later
+			0,  // expected_revenue - default 0
+			0,  // priority - default 0
+		)
+		if err != nil {
+			return fmt.Errorf("failed to seed branch %s: %w", code, err)
+		}
+	}
+	
+	return nil
+}
 

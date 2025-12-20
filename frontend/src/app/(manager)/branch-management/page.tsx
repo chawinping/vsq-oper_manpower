@@ -42,8 +42,11 @@ export default function BranchManagementPage() {
         const userData = await authApi.getMe();
         setUser(userData);
         await loadBranches();
-      } catch (error) {
-        router.push('/login');
+      } catch (error: any) {
+        console.error('Failed to fetch data:', error);
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login');
+        }
       } finally {
         setLoading(false);
       }
@@ -178,7 +181,7 @@ export default function BranchManagementPage() {
                 </tr>
               </thead>
               <tbody>
-                {branches.map((branch) => (
+                {(branches || []).map((branch) => (
                   <tr key={branch.id}>
                     <td className="font-medium">{branch.code}</td>
                     <td>{branch.name}</td>
@@ -365,7 +368,7 @@ export default function BranchManagementPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {revenueData.map((revenue) => {
+                      {(revenueData || []).map((revenue) => {
                         const diff = (revenue.actual_revenue || 0) - revenue.expected_revenue;
                         return (
                           <tr key={revenue.id}>

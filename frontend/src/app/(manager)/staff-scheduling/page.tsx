@@ -18,6 +18,9 @@ export default function StaffSchedulingPage() {
     const fetchData = async () => {
       try {
         const userData = await authApi.getMe();
+        if (!userData) {
+          throw new Error('User data not available');
+        }
         setUser(userData);
         
         // Load branches
@@ -25,12 +28,15 @@ export default function StaffSchedulingPage() {
         setBranches(branchesData || []);
         
         // If user is branch manager, set their branch
-        if (userData.role === 'branch_manager' && branchesData.length > 0) {
+        if (userData.role === 'branch_manager' && branchesData && branchesData.length > 0) {
           // Note: In a real app, you'd get the branch_id from the user object
           setSelectedBranchId(branchesData[0].id);
         }
-      } catch (error) {
-        router.push('/login');
+      } catch (error: any) {
+        console.error('Failed to fetch data:', error);
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login');
+        }
       } finally {
         setLoading(false);
       }
@@ -67,7 +73,7 @@ export default function StaffSchedulingPage() {
               className="input-field w-auto min-w-[250px]"
             >
               <option value="">-- Select a branch --</option>
-              {branches.map((branch) => (
+              {(branches || []).map((branch) => (
                 <option key={branch.id} value={branch.id}>
                   {branch.name} ({branch.code})
                 </option>

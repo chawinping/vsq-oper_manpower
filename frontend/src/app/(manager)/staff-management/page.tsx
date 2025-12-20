@@ -43,8 +43,12 @@ export default function StaffManagementPage() {
         ]);
         setPositions(positionsData || []);
         setBranches(branchesData || []);
-      } catch (error) {
-        router.push('/login');
+      } catch (error: any) {
+        console.error('Failed to fetch data:', error);
+        // Only redirect if not already on login page
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login');
+        }
       } finally {
         setLoading(false);
       }
@@ -230,9 +234,9 @@ export default function StaffManagementPage() {
                 </tr>
               </thead>
               <tbody>
-                {staff.map((staffMember) => {
-                  const position = positions.find((p) => p.id === staffMember.position_id);
-                  const branch = branches.find((b) => b.id === staffMember.branch_id);
+                {(staff || []).map((staffMember) => {
+                  const position = (positions || []).find((p) => p.id === staffMember.position_id);
+                  const branch = (branches || []).find((b) => b.id === staffMember.branch_id);
                   return (
                     <tr key={staffMember.id}>
                       <td className="font-medium">{staffMember.name}</td>
@@ -331,7 +335,7 @@ export default function StaffManagementPage() {
                       className="input-field"
                     >
                       <option value="">Select Position</option>
-                      {positions.map((p) => (
+                      {(positions || []).map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
                         </option>
@@ -349,7 +353,7 @@ export default function StaffManagementPage() {
                         className="input-field"
                       >
                         <option value="">Select Branch</option>
-                        {branches.map((b) => (
+                        {(branches || []).map((b) => (
                           <option key={b.id} value={b.id}>
                             {b.name} ({b.code})
                           </option>

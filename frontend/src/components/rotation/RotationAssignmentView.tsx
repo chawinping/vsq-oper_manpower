@@ -173,10 +173,10 @@ export default function RotationAssignmentView({ startDate, endDate }: RotationA
   };
 
   // Get unique coverage areas
-  const coverageAreas = Array.from(new Set(rotationStaff.map((s) => s.coverage_area).filter(Boolean)));
+  const coverageAreas = Array.from(new Set((rotationStaff || []).map((s) => s.coverage_area).filter(Boolean)));
 
   // Filter data based on view mode
-  const filteredBranches = branches.filter((b) => {
+  const filteredBranches = (branches || []).filter((b) => {
     if (viewMode === 'by-area' && selectedArea) {
       // Filter branches by area manager or other criteria
       return true; // Simplified - implement actual area filtering
@@ -184,7 +184,7 @@ export default function RotationAssignmentView({ startDate, endDate }: RotationA
     return true;
   });
 
-  const filteredStaff = rotationStaff.filter((s) => {
+  const filteredStaff = (rotationStaff || []).filter((s) => {
     if (selectedArea && s.coverage_area !== selectedArea) return false;
     return true;
   });
@@ -258,9 +258,9 @@ export default function RotationAssignmentView({ startDate, endDate }: RotationA
         <div className="mb-6 bg-purple-50 border border-purple-200 rounded-lg p-4">
           <h3 className="text-lg font-semibold mb-3 text-purple-900">AI Suggestions</h3>
           <div className="space-y-2 max-h-64 overflow-y-auto">
-            {suggestions.map((suggestion, index) => {
-              const staff = rotationStaff.find((s) => s.id === suggestion.rotation_staff_id);
-              const branch = branches.find((b) => b.id === suggestion.branch_id);
+            {(suggestions || []).map((suggestion, index) => {
+              const staff = (rotationStaff || []).find((s) => s.id === suggestion.rotation_staff_id);
+              const branch = (branches || []).find((b) => b.id === suggestion.branch_id);
               return (
                 <div
                   key={index}
@@ -398,7 +398,7 @@ export default function RotationAssignmentView({ startDate, endDate }: RotationA
                     {branch.name}
                   </td>
                   {daysInMonth.map((day) => {
-                    const assignmentsForDay = assignments.filter(
+                    const assignmentsForDay = (assignments || []).filter(
                       (a) => a.branch_id === branch.id && isSameDay(new Date(a.date), day)
                     );
                     return (
@@ -408,7 +408,7 @@ export default function RotationAssignmentView({ startDate, endDate }: RotationA
                       >
                         <div className="space-y-1">
                           {assignmentsForDay.map((assignment) => {
-                            const staff = rotationStaff.find((s) => s.id === assignment.rotation_staff_id);
+                            const staff = (rotationStaff || []).find((s) => s.id === assignment.rotation_staff_id);
                             return (
                               <div
                                 key={assignment.id}
@@ -463,7 +463,7 @@ export default function RotationAssignmentView({ startDate, endDate }: RotationA
                     {staffMember.name}
                   </td>
                   {daysInMonth.map((day) => {
-                    const assignmentsForDay = assignments.filter(
+                    const assignmentsForDay = (assignments || []).filter(
                       (a) => a.rotation_staff_id === staffMember.id && isSameDay(new Date(a.date), day)
                     );
                     return (
@@ -473,7 +473,7 @@ export default function RotationAssignmentView({ startDate, endDate }: RotationA
                       >
                         <div className="space-y-1">
                           {assignmentsForDay.map((assignment) => {
-                            const branch = branches.find((b) => b.id === assignment.branch_id);
+                            const branch = (branches || []).find((b) => b.id === assignment.branch_id);
                             return (
                               <div
                                 key={assignment.id}
@@ -535,7 +535,7 @@ export default function RotationAssignmentView({ startDate, endDate }: RotationA
                               {staffMember.name}
                             </td>
                             {daysInMonth.map((day) => {
-                              const assignmentsForDay = assignments.filter(
+                              const assignmentsForDay = (assignments || []).filter(
                                 (a) =>
                                   a.rotation_staff_id === staffMember.id &&
                                   isSameDay(new Date(a.date), day)
@@ -547,7 +547,7 @@ export default function RotationAssignmentView({ startDate, endDate }: RotationA
                                 >
                                   <div className="space-y-1">
                                     {assignmentsForDay.map((assignment) => {
-                                      const branch = branches.find((b) => b.id === assignment.branch_id);
+                                      const branch = (branches || []).find((b) => b.id === assignment.branch_id);
                                       return (
                                         <div
                                           key={assignment.id}

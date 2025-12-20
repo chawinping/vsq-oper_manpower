@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api';
 
 export const apiClient = axios.create({
   baseURL: API_URL,
@@ -26,9 +26,9 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
+    // Don't redirect to login if we're already on the login page
     if (error.response?.status === 401) {
-      // Redirect to login if unauthorized
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
         window.location.href = '/login';
       }
     }
@@ -37,5 +37,6 @@ apiClient.interceptors.response.use(
 );
 
 export default apiClient;
+
 
 

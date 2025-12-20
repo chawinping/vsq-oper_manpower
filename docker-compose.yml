@@ -79,6 +79,7 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 10s
 
   frontend:
     profiles: ["fullstack"]
@@ -127,6 +128,7 @@ services:
       backend-dev:
         condition: service_started
     restart: unless-stopped
+    stop_grace_period: 10s
 
 volumes:
   postgres_data:

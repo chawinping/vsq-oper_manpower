@@ -16,8 +16,12 @@ export default function DashboardPage() {
       try {
         const userData = await authApi.getMe();
         setUser(userData);
-      } catch (error) {
-        router.push('/login');
+      } catch (error: any) {
+        console.error('Failed to fetch user:', error);
+        // Only redirect if not already on login page
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+          router.push('/login');
+        }
       } finally {
         setLoading(false);
       }
