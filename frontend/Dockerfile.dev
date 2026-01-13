@@ -1,0 +1,33 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies
+RUN apk add --no-cache libc6-compat
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm ci
+
+# Expose port
+EXPOSE 4000
+
+# Set environment variables for development
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=4000
+ENV NODE_OPTIONS=--max-old-space-size=4096
+
+# Create entrypoint script to update timestamps before starting
+RUN echo '#!/bin/sh' > /entrypoint.sh && \
+    echo 'node -e "const fs=require(\"fs\");const now=new Date();const thaiTime=new Date(now.getTime()+7*60*60*1000);const buildDate=thaiTime.toISOString().slice(0,19).replace(\"T\",\" \");const buildTime=thaiTime.toISOString().slice(0,19)+\"+07:00\";const updateVersion=(file)=>{try{if(fs.existsSync(file)){let content=fs.readFileSync(file,\"utf8\");content=content.replace(/^\\uFEFF/,\"\");const data=JSON.parse(content);data.buildDate=buildDate;data.buildTime=buildTime;fs.writeFileSync(file,JSON.stringify(data,null,2)+\"\\n\",\"utf8\");}}catch(e){console.error(\"Error updating\",file,e.message);}};updateVersion(\"VERSION.json\");updateVersion(\"public/VERSION.json\");"' >> /entrypoint.sh && \
+    echo 'exec "$@"' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Start development server with hot reloading
+CMD ["npm", "run", "dev"]
+

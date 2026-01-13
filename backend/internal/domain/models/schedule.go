@@ -6,16 +6,26 @@ import (
 	"github.com/google/uuid"
 )
 
+type ScheduleStatus string
+
+const (
+	ScheduleStatusWorking  ScheduleStatus = "working"
+	ScheduleStatusOff      ScheduleStatus = "off"
+	ScheduleStatusLeave    ScheduleStatus = "leave"
+	ScheduleStatusSickLeave ScheduleStatus = "sick_leave"
+)
+
 type StaffSchedule struct {
-	ID            uuid.UUID `json:"id" db:"id"`
-	StaffID       uuid.UUID `json:"staff_id" db:"staff_id"`
-	Staff         *Staff    `json:"staff,omitempty"`
-	BranchID      uuid.UUID `json:"branch_id" db:"branch_id"`
-	Branch        *Branch   `json:"branch,omitempty"`
-	Date          time.Time `json:"date" db:"date"`
-	IsWorkingDay  bool      `json:"is_working_day" db:"is_working_day"`
-	CreatedBy     uuid.UUID `json:"created_by" db:"created_by"`
-	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	ID            uuid.UUID     `json:"id" db:"id"`
+	StaffID       uuid.UUID     `json:"staff_id" db:"staff_id"`
+	Staff         *Staff        `json:"staff,omitempty"`
+	BranchID      uuid.UUID     `json:"branch_id" db:"branch_id"`
+	Branch        *Branch       `json:"branch,omitempty"`
+	Date          time.Time     `json:"date" db:"date"`
+	ScheduleStatus ScheduleStatus `json:"schedule_status" db:"schedule_status"`
+	IsWorkingDay  bool          `json:"is_working_day" db:"is_working_day"` // Deprecated: kept for backward compatibility
+	CreatedBy     uuid.UUID     `json:"created_by" db:"created_by"`
+	CreatedAt     time.Time     `json:"created_at" db:"created_at"`
 }
 
 type RotationAssignment struct {

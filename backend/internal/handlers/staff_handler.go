@@ -20,17 +20,22 @@ type StaffHandler struct {
 
 func NewStaffHandler(repos *postgres.Repositories) *StaffHandler {
 	return &StaffHandler{
-		repos:         repos,
-		excelImporter: excel.NewExcelImporter(),
+		repos: repos,
+		excelImporter: excel.NewExcelImporter(
+			repos.Position,
+			repos.Branch,
+		),
 	}
 }
 
 type CreateStaffRequest struct {
+	Nickname     string    `json:"nickname"`
 	Name         string    `json:"name" binding:"required"`
 	StaffType    string    `json:"staff_type" binding:"required"`
 	PositionID   uuid.UUID `json:"position_id" binding:"required"`
 	BranchID     *uuid.UUID `json:"branch_id,omitempty"`
 	CoverageArea string    `json:"coverage_area"`
+	SkillLevel   int       `json:"skill_level" binding:"min=0,max=10"`
 }
 
 func (h *StaffHandler) List(c *gin.Context) {
@@ -43,12 +48,24 @@ func (h *StaffHandler) List(c *gin.Context) {
 		st := models.StaffType(staffType)
 		filters.StaffType = &st
 	}
-	if branchIDStr != "" {
+	
+	// For branch managers, enforce their branch
+	role := c.GetString("role")
+	if role == "branch_manager" {
+		userBranchID, exists := c.Get("user_branch_id")
+		if exists {
+			if branchUUID, ok := userBranchID.(uuid.UUID); ok {
+				filters.BranchID = &branchUUID
+			}
+		}
+	} else if branchIDStr != "" {
+		// Other roles can specify branch_id
 		branchID, err := uuid.Parse(branchIDStr)
 		if err == nil {
 			filters.BranchID = &branchID
 		}
 	}
+	
 	if positionIDStr != "" {
 		positionID, err := uuid.Parse(positionIDStr)
 		if err == nil {
@@ -72,13 +89,47 @@ func (h *StaffHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// For branch managers, enforce their branch and prevent rotation staff creation
+	role := c.GetString("role")
+	if role == "branch_manager" {
+		// Branch managers cannot create rotation staff
+		if models.StaffType(req.StaffType) == models.StaffTypeRotation {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Branch managers cannot add rotation staff"})
+			return
+		}
+		
+		// Branch managers can only create branch staff for their branch
+		if models.StaffType(req.StaffType) != models.StaffTypeBranch {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Branch managers can only add branch staff"})
+			return
+		}
+		
+		userBranchID, exists := c.Get("user_branch_id")
+		if exists {
+			if branchUUID, ok := userBranchID.(uuid.UUID); ok {
+				req.BranchID = &branchUUID
+			}
+		} else {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Branch manager must be assigned to a branch"})
+			return
+		}
+	}
+
+	// Set default skill level if not provided (default to 5)
+	skillLevel := req.SkillLevel
+	if skillLevel == 0 {
+		skillLevel = 5 // Default to 5 if not specified
+	}
+
 	staff := &models.Staff{
 		ID:           uuid.New(),
+		Nickname:     req.Nickname,
 		Name:         req.Name,
 		StaffType:    models.StaffType(req.StaffType),
 		PositionID:   req.PositionID,
 		BranchID:     req.BranchID,
 		CoverageArea: req.CoverageArea,
+		SkillLevel:   skillLevel,
 	}
 
 	if err := h.repos.Staff.Create(staff); err != nil {
@@ -97,19 +148,66 @@ func (h *StaffHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Check if staff exists and get current data
+	existingStaff, err := h.repos.Staff.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Staff not found"})
+		return
+	}
+
 	var req CreateStaffRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	// For branch managers, enforce restrictions
+	role := c.GetString("role")
+	if role == "branch_manager" {
+		// Branch managers cannot edit rotation staff
+		if existingStaff.StaffType == models.StaffTypeRotation {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Branch managers cannot edit rotation staff"})
+			return
+		}
+		
+		// Branch managers cannot change staff type to rotation
+		if models.StaffType(req.StaffType) == models.StaffTypeRotation {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Branch managers cannot change staff type to rotation"})
+			return
+		}
+		
+		// Ensure branch manager can only edit staff from their branch
+		userBranchID, exists := c.Get("user_branch_id")
+		if exists {
+			if branchUUID, ok := userBranchID.(uuid.UUID); ok {
+				if existingStaff.BranchID == nil || *existingStaff.BranchID != branchUUID {
+					c.JSON(http.StatusForbidden, gin.H{"error": "Branch managers can only edit staff from their own branch"})
+					return
+				}
+				// Force branch ID to their branch
+				req.BranchID = &branchUUID
+			}
+		}
+	}
+
+	// Set skill level (use existing if not provided, default to 5)
+	skillLevel := req.SkillLevel
+	if skillLevel == 0 {
+		skillLevel = existingStaff.SkillLevel // Keep existing if not specified
+		if skillLevel == 0 {
+			skillLevel = 5 // Default to 5 if existing is also 0
+		}
+	}
+
 	staff := &models.Staff{
 		ID:           id,
+		Nickname:     req.Nickname,
 		Name:         req.Name,
 		StaffType:    models.StaffType(req.StaffType),
 		PositionID:   req.PositionID,
 		BranchID:     req.BranchID,
 		CoverageArea: req.CoverageArea,
+		SkillLevel:   skillLevel,
 	}
 
 	if err := h.repos.Staff.Update(staff); err != nil {
@@ -128,8 +226,58 @@ func (h *StaffHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	// Check if staff exists and get current data
+	existingStaff, err := h.repos.Staff.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Staff not found"})
+		return
+	}
+
+	// For branch managers, enforce restrictions
+	role := c.GetString("role")
+	if role == "branch_manager" {
+		// Branch managers cannot delete rotation staff
+		if existingStaff.StaffType == models.StaffTypeRotation {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Branch managers cannot delete rotation staff"})
+			return
+		}
+		
+		// Ensure branch manager can only delete staff from their branch
+		userBranchID, exists := c.Get("user_branch_id")
+		if exists {
+			if branchUUID, ok := userBranchID.(uuid.UUID); ok {
+				if existingStaff.BranchID == nil || *existingStaff.BranchID != branchUUID {
+					c.JSON(http.StatusForbidden, gin.H{"error": "Branch managers can only delete staff from their own branch"})
+					return
+				}
+			}
+		}
+	}
+
+	// Delete related records before deleting staff
+	// 1. Delete all schedules for this staff
+	if err := h.repos.Schedule.DeleteByStaffID(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to delete staff schedules: %v", err)})
+		return
+	}
+
+	// 2. If rotation staff, delete rotation assignments and effective branches
+	if existingStaff.StaffType == models.StaffTypeRotation {
+		// Delete rotation assignments
+		if err := h.repos.Rotation.DeleteByRotationStaffID(id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to delete rotation assignments: %v", err)})
+			return
+		}
+		// Delete effective branches
+		if err := h.repos.EffectiveBranch.DeleteByRotationStaffID(id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to delete effective branches: %v", err)})
+			return
+		}
+	}
+
+	// 3. Finally, delete the staff member
 	if err := h.repos.Staff.Delete(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to delete staff: %v", err)})
 		return
 	}
 
@@ -160,40 +308,48 @@ func (h *StaffHandler) Import(c *gin.Context) {
 	}
 
 	// Import staff from Excel
-	staffList, err := h.excelImporter.ImportStaff(fileData)
-	if err != nil {
-		// Check if it's a partial success (some records imported, some failed)
-		if len(staffList) > 0 {
-			c.JSON(http.StatusPartialContent, gin.H{
-				"error":      err.Error(),
-				"imported":   len(staffList),
-				"staff":      staffList,
-			})
+	staffList, parseErr := h.excelImporter.ImportStaff(fileData)
+	if parseErr != nil {
+		// If no valid records were parsed, return error immediately
+		if len(staffList) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": parseErr.Error()})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		// If there are valid records but also parsing errors, continue to save the valid ones
+		// The parsing errors will be included as warnings in the response
 	}
 
 	// Save imported staff to database
 	var savedStaff []*models.Staff
-	var errors []string
+	var saveErrors []string
 	for _, staff := range staffList {
 		if err := h.repos.Staff.Create(staff); err != nil {
-			errors = append(errors, fmt.Sprintf("Failed to save %s: %v", staff.Name, err))
+			saveErrors = append(saveErrors, fmt.Sprintf("Failed to save %s: %v", staff.Name, err))
 			continue
 		}
 		savedStaff = append(savedStaff, staff)
 	}
 
-	if len(errors) > 0 && len(savedStaff) == 0 {
+	// If no records were saved at all, return error
+	if len(savedStaff) == 0 {
+		errorMsg := "Failed to save any staff records"
+		if parseErr != nil {
+			errorMsg = fmt.Sprintf("%s. Parse errors: %v", errorMsg, parseErr)
+		}
+		if len(saveErrors) > 0 {
+			errorMsg = fmt.Sprintf("%s. Save errors: %s", errorMsg, saveErrors[0])
+			if len(saveErrors) > 1 {
+				errorMsg = fmt.Sprintf("%s (and %d more)", errorMsg, len(saveErrors)-1)
+			}
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to save any staff records",
-			"details": errors,
+			"error":   errorMsg,
+			"details": saveErrors,
 		})
 		return
 	}
 
+	// Build response with actual saved count
 	response := gin.H{
 		"message":    "Import completed",
 		"imported":    len(savedStaff),
@@ -201,9 +357,21 @@ func (h *StaffHandler) Import(c *gin.Context) {
 		"staff":      savedStaff,
 	}
 
-	if len(errors) > 0 {
-		response["warnings"] = errors
-		response["message"] = fmt.Sprintf("Import completed with %d warnings", len(errors))
+	// Add parsing warnings if any
+	if parseErr != nil {
+		response["parse_warnings"] = parseErr.Error()
+	}
+
+	// Add save errors as warnings if any records were saved
+	if len(saveErrors) > 0 {
+		response["save_warnings"] = saveErrors
+		response["message"] = fmt.Sprintf("Import completed with %d warnings", len(saveErrors))
+	}
+
+	// Return partial content if there were any errors (parsing or saving)
+	if parseErr != nil || len(saveErrors) > 0 {
+		c.JSON(http.StatusPartialContent, response)
+		return
 	}
 
 	c.JSON(http.StatusOK, response)

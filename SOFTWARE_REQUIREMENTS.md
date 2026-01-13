@@ -1,16 +1,16 @@
 ---
 title: Software Requirements Specification
 description: Detailed requirements for VSQ Operations Manpower System
-version: 1.2.0
-lastUpdated: 2025-12-21 00:28:16
+version: 1.8.0
+lastUpdated: 2026-01-09 10:46:30
 ---
 
 # VSQ Operations Manpower - Software Requirements Specification
 
 ## Document Information
 
-- **Version:** 1.2.0
-- **Last Updated:** 2025-12-21 00:28:16
+- **Version:** 1.8.0
+- **Last Updated:** 2026-01-09 10:46:30
 - **Status:** Active
 
 ## Related Documents
@@ -62,12 +62,19 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
 
 #### FR-AUZ-01: Role-Based Access Control
 - **Description:** System shall enforce role-based access control
-- **Status:** ✅ Implemented
+- **Status:** ⚠️ Partially Implemented (needs enhancement for rotation staff permissions)
 - **Roles:**
-  1. **Admin:** Can set system configurations, manage users and roles
-  2. **Area Manager/District Manager:** Can assign rotation staff to branches
-  3. **Branch Manager:** Can allocate staff workday and off day in their branch
-  4. **Viewer:** Can only view staff allocation and dashboard data
+  1. **Admin:** Can set system configurations, manage users and roles. Can view/add/edit/delete/import rotation staff. Can assign rotation staff to branches. Can edit rotation staff schedules.
+  2. **Area Manager:** Can assign rotation staff to branches. Can view/add/edit/delete/import rotation staff. Can edit rotation staff schedules.
+  3. **District Manager:** Can view rotation staff assignments (read-only). Cannot manage rotation staff or edit schedules.
+  4. **Branch Manager:** Can allocate staff workday, off day, and leave day in their branch. Can add, edit, and manage staff in their branch. Can only access staff and schedules from their assigned branch (enforced by branch code). Can view rotation staff assigned to their branch (read-only).
+  5. **Viewer:** Can only view staff allocation and dashboard data
+- **Branch Manager Restrictions:**
+  - Branch managers are linked to a branch via `branch_id` field in users table
+  - Staff listings automatically filtered to show only their branch staff
+  - Schedule operations restricted to their assigned branch
+  - Cannot access or modify staff from other branches
+  - Access enforced at API level through middleware and handler validation
 
 ### 3.2 Staff Management
 
@@ -97,7 +104,29 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
 - **Details:**
   - Manual entry via UI (✅ Implemented)
   - Excel import for bulk data (❌ Not Implemented - placeholder exists)
-  - Staff information includes: name, type, position, branch (for branch staff), coverage area (for rotation staff)
+  - Staff information includes: nickname, full name, type, position, branch (for branch staff), coverage area (for rotation staff)
+  - Staff addition/deletion is done in a separate module from schedule arrangement (✅ Implemented - separate pages)
+  - Branch manager can add additional staff to their branch
+- **Branch Manager Restrictions:**
+  - Manual entry is available for branch manager role but only for branch staff of that branch
+  - Branch manager role cannot add entry for rotation staff
+  - Branch manager can only create, edit, and delete branch staff assigned to their own branch
+- **Rotation Staff Management Permissions:**
+  - Only Admin and Area Manager roles can view/add/edit/delete/import rotation staff
+  - District Manager role does NOT have rotation staff management permissions (only Admin and Area Manager)
+  - Rotation staff CRUD operations are restricted at API level with role-based access control
+
+#### FR-RM-04: Staff Skills and Qualifications
+- **Description:** System shall track staff skills and qualifications
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - Staff can have multiple skills/qualifications
+  - Skills include: "can manage a branch alone" and other relevant skills
+  - Skills are used to determine staff eligibility for specific assignments
+  - "Can manage a branch alone" skill is required for staff assigned to branches with no doctor (doctor-off days)
+  - Skills can be assigned to both branch staff and rotation staff
+  - Skills are used as constraints when allocating rotation staff
+  - Skills can be manually assigned or imported from Excel
 
 ### 3.3 Branch Management
 
@@ -106,9 +135,75 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
 - **Status:** ✅ Implemented
 - **Details:**
   - Each branch has: name, code, address
-  - Expected revenue can be set per branch
+  - Expected revenue can be set per day (see FR-BM-02)
   - Priority level can be assigned
   - Area Manager can be assigned to branches
+  - Branch operational status can vary by day (see FR-BM-04)
+
+#### FR-BM-04: Branch Operational Status
+- **Description:** System shall track branch operational status on a daily basis
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - Branch operational status can vary by day
+  - A branch may be non-operational on specific days due to:
+    1. **No Doctor:** Branch has no doctor assigned on that day (doctor-off day)
+    2. **Branch Closed:** Branch is closed on that day (holiday, maintenance, etc.)
+  - **Operational Status Values:**
+    - **Operational:** Branch is open and has at least one doctor assigned (doctor-on day)
+    - **No Doctor:** Branch is open but has no doctor assigned (doctor-off day, non-operational)
+    - **Closed:** Branch is closed on that day (non-operational)
+  - **Doctor-On/Doctor-Off Days:**
+    - Branches typically have 1-4 doctors assigned per day (doctor-on days)
+    - When a branch has no doctor assigned (doctor-off day), only one staff member is required
+    - The single staff member on doctor-off days must have the "can manage a branch alone" skill
+    - Doctor assignments determine whether a day is doctor-on or doctor-off
+    - Maximum 4 doctors can be assigned to a branch per day
+  - **Business Rules:**
+    - Non-operational branches should not require staff allocation (or require minimal staff)
+    - System should warn when trying to assign staff to non-operational branches
+    - Operational status affects staff allocation calculations
+    - Operational status can be set manually or automatically determined based on doctor assignments
+    - On doctor-off days, only staff with "can manage a branch alone" skill can be assigned
+    - System should validate that assigned staff has required skills before allowing assignment
+  - **Data Storage:**
+    - Operational status stored per branch per date
+    - Status can be set manually or auto-calculated from doctor assignments
+    - Historical operational status is maintained
+    - Doctor assignments stored per branch per date (see FR-BM-05)
+
+#### FR-BM-05: Doctor Data Structure
+- **Description:** System shall manage doctor information and daily expected revenue
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - **Doctor Information:**
+    - Doctor ID (unique identifier)
+    - Doctor name (full name)
+    - Doctor code/nickname (optional)
+    - Doctor specialization/type (optional)
+    - Contact information (optional)
+  - **Doctor-Branch Assignment:**
+    - Doctors can be assigned to branches on specific dates
+    - A doctor can be assigned to multiple branches on different dates
+    - A branch can have multiple doctors on the same day
+    - Doctor assignments are date-specific (can vary day by day)
+  - **Doctor Daily Expected Revenue:**
+    - Each doctor has a daily expected revenue value per branch per date
+    - Expected revenue can vary by:
+      - Date (different days may have different expected revenue)
+      - Branch (same doctor may have different expected revenue at different branches)
+    - Expected revenue is stored per doctor per branch per date
+  - **Business Rules:**
+    - Doctor assignments determine branch operational status (if no doctor, branch is non-operational)
+    - Branch expected revenue can be calculated as sum of all assigned doctors' daily expected revenue
+    - Doctor assignments can be imported from Excel
+    - Doctor assignments can be manually created/edited
+    - Doctor expected revenue can be imported from Excel
+    - Doctor expected revenue can be manually set per doctor per branch per date
+  - **Use Cases:**
+    - Admin/Area Manager assigns doctors to branches for specific dates
+    - System calculates branch expected revenue from doctor assignments
+    - System determines branch operational status based on doctor assignments
+    - Import doctor assignments and expected revenue from Excel
 
 #### FR-BM-03: Standard Branch Codes
 - **Description:** System shall maintain a hardcoded list of standard branch codes that must always be available
@@ -124,28 +219,90 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
   - Validation is enforced at the API level to prevent deletion or code modification of standard branches
 
 #### FR-BM-02: Revenue Tracking
-- **Description:** System shall track expected and actual revenue
-- **Status:** ✅ Implemented
+- **Description:** System shall track expected and actual revenue on a daily basis
+- **Status:** ⚠️ Partially Implemented (needs enhancement for 365-day support and multiple input sources)
 - **Details:**
-  - Expected revenue can be set per day
-  - Actual revenue can be recorded
+  - Expected revenue can vary day by day for all 365 days of the year
+  - Expected revenue is stored per branch per date
+  - Actual revenue can be recorded per day
   - Revenue history is maintained
+  - **Input Sources for Expected Revenue:**
+    1. **Excel Import:** Expected revenue can be imported from Excel files
+       - Excel format should support bulk import of daily revenue data
+       - Import can cover multiple branches and date ranges
+       - Validation required: date format, branch codes, revenue values
+    2. **Doctor Expected Revenue:** Expected revenue can be calculated from doctor daily expected revenue
+       - System aggregates daily expected revenue from all doctors assigned to the branch on that day
+       - Doctor data structure required (see FR-BM-05)
+       - Calculation: Sum of all doctors' daily expected revenue for the branch on that date
+  - **Business Rules:**
+    - If no expected revenue is set for a day, default to 0 or use previous day's value (configurable)
+    - Expected revenue from Excel import can override doctor-calculated revenue
+    - Doctor-calculated revenue is automatically updated when doctor assignments change
+    - Revenue data must support date ranges for bulk operations
 
 ### 3.4 Staff Scheduling
 
+#### FR-SM-03: Rotation Staff Schedule Management
+- **Description:** System shall provide a rotation staff schedule edit menu
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - Rotation staff schedule edit menu allows editing individual rotation staff schedules
+  - Schedule status options:
+    1. **Day Off:** Rotation staff is not working (regular day off)
+    2. **Leave Day:** Rotation staff is on leave (vacation, personal leave)
+    3. **Sick Leave:** Rotation staff is on sick leave
+    4. **Working Day:** Rotation staff is working - **branch must be specified**
+  - Business Rules:
+    - If schedule status is "working", a branch assignment is required
+    - If schedule status is "day off", "leave", or "sick leave", no branch assignment is needed
+    - Working day assignments must respect effective branch relationships (Level 1 and Level 2)
+    - Working day assignments create or update rotation assignment records
+  - Access Control:
+    - Only Admin and Area Manager roles can edit rotation staff schedules
+    - Branch Managers can only view rotation staff assigned to their branch (read-only)
+
 #### FR-SM-01: Branch Staff Scheduling
 - **Description:** Branch managers can schedule their branch staff
-- **Status:** ✅ Implemented
+- **Status:** ⚠️ Partially Implemented
 - **Details:**
   - Monthly calendar view (staff × dates matrix)
   - Can schedule up to 30 days in advance
-  - Mark working days and off days
+  - Mark working days, off days, and leave days (❌ Leave day not implemented - currently only working/off day boolean)
   - Usually branch staff works 6 days a week (configurable)
+  - Schedule arrangement is done in a dedicated scheduling module (separate from staff management)
+  - Table view displays dates from left (closer dates) to right (further dates)
+  - Branch manager can toggle each staff's workday/offday/leave day for any particular day
+  - Branch manager can save and edit schedules
+  - Staff are listed with Nickname, Full Name, and Position (❌ Nickname not implemented - currently only Name field)
+  - Branch manager can see staff schedule of her own branch only
+  - Branch manager can see rotation staff assigned to her branch too (read-only view)
+  - In the staff schedule menu, show the branch name and branch code of the branch
+- **Use Case:**
+  1. Branch manager (a user in this system) arranges her own branch staff using this system
+  2. Branch manager arranges staff for each day by toggling each staff workday/offday/leave day on any particular day to form work schedule for the whole branch
+  3. Branch staff including the manager are listed by Nickname, Full Name, and position
+  4. Use a table to assist staff arrangements - table view is from left (closer dates) to right (further dates)
+  5. Branch manager can save, edit, or add additional staff
+  6. Schedule arrangement is done in one module, while staff addition/deletion is done in another module
+- **Technical Notes:**
+  - Current implementation uses `is_working_day` boolean field
+  - Need to change to enum/string type: `schedule_status` with values: "working", "off", "leave"
+  - Database migration required: `ALTER TABLE staff_schedules ADD COLUMN schedule_status VARCHAR(20) DEFAULT 'off'`
+  - Staff model needs `nickname` field addition
 
 #### FR-SM-02: Rotation Staff Assignment
-- **Description:** Area/District managers can assign rotation staff to branches
-- **Status:** ✅ Implemented
+- **Description:** Admin and Area Manager roles can assign rotation staff to branches
+- **Status:** ⚠️ Partially Implemented (needs enhancement)
 - **Details:**
+  - Only Admin and Area Manager roles can assign rotation staff to branches
+  - Assignment workflow:
+    1. Admin/Area Manager selects a branch to view/edit
+    2. Rotation staff eligible for the selected branch are automatically populated in the branch table
+    3. Eligible rotation staff are determined by effective branch relationships (Level 1 and Level 2)
+    4. Rotation staff appear as new rows in the branch's staff table, alongside the branch's proprietary staff
+    5. Admin/Area Manager selects which date(s) a rotation staff will operate for that branch
+    6. Assignment is saved as a rotation assignment record
   - Summary view showing assignments (rotation staff → branches × dates)
   - View toggles:
     - By branch group
@@ -158,12 +315,17 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
 
 #### FR-BL-01: Revenue-Based Staff Calculation
 - **Description:** System shall calculate required staff based on expected revenue
-- **Status:** ✅ Implemented
+- **Status:** ⚠️ Partially Implemented (needs enhancement for preferred staff per position)
 - **Details:**
   - Formula: `staff_count = min_staff + (revenue_threshold * multiplier)`
   - Configurable via System Settings
   - Minimum staff per position regardless of revenue
   - Doctor count consideration
+  - **Preferred Staff per Position:** Each branch has a preferred number of staff for each position
+    - Preferred staff counts act as constraints when allocating rotation staff
+    - Preferred counts are branch-specific and position-specific
+    - System should prioritize meeting preferred staff counts when allocating rotation staff
+    - Preferred counts can be configured per branch per position
 
 #### FR-BL-02: Effective Branch Management
 - **Description:** Rotation staff can only be assigned to designated branches
@@ -192,6 +354,18 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
   - Provide conflict resolution options
   - Notify managers of conflicts
 - **Related:** See `docs/conflict-resolution-rules.md` for detailed rules
+
+#### FR-BL-05: Minimum Daily Staff Constraints
+- **Description:** System shall enforce minimum daily staff requirements per branch
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - Each branch has minimum staff requirements for specific positions on each day
+  - Minimum requirements are position-based (e.g., at least 1 front/counter staff and 1 doctor assistant = minimum 2 total)
+  - Minimum daily staff counts act as constraints when allocating rotation staff
+  - System must ensure minimum requirements are met before allocating additional staff
+  - Minimum requirements can vary by day (e.g., different requirements for weekdays vs weekends)
+  - Minimum requirements are configurable per branch per position per day
+  - Violations of minimum requirements should trigger warnings or prevent allocation
 
 ### 3.6 AI Suggestions
 
@@ -351,6 +525,79 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
 - **Description:** Rotation staff assignments have two levels (priority and reserved)
 - **Status:** ✅ Implemented
 
+### BR-BL-05: Schedule Status Types
+- **Description:** Staff schedules support three status types: working day, off day, and leave day
+- **Status:** ✅ Implemented
+- **Details:**
+  - Working day: Staff is scheduled to work
+  - Off day: Staff is not scheduled (regular day off)
+  - Leave day: Staff is on leave (vacation, sick leave, etc.)
+  - Schedule status is stored per staff per date
+  - Branch manager can toggle between these three states
+
+### BR-BL-06: Branch Manager Access Control
+- **Description:** Branch managers can only add/arrange staff of their own branch
+- **Status:** ✅ Implemented
+- **Details:**
+  - Branch managers are linked to a branch via `branch_id` in the users table
+  - Branch managers can only view and manage staff from their assigned branch
+  - Branch managers can only create schedules for their assigned branch
+  - Staff listings are automatically filtered to show only staff from the branch manager's branch
+  - Access is enforced at the API level through middleware and handler validation
+  - Branch code is used to link branch managers to branches (username pattern: `{branchcode}mgr` or `{branchcode}amgr`)
+
+### BR-BL-07: Branch Expected Revenue Calculation
+- **Description:** Branch expected revenue can be calculated from multiple sources
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - Expected revenue can be set manually, imported from Excel, or calculated from doctor assignments
+  - When calculated from doctors: Sum of all assigned doctors' daily expected revenue for that branch on that date
+  - Excel import can override doctor-calculated revenue
+  - Manual entry can override both Excel and doctor-calculated revenue
+  - Priority: Manual entry > Excel import > Doctor-calculated
+
+### BR-BL-08: Branch Operational Status
+- **Description:** Branch operational status is determined by doctor assignments and manual settings
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - Branch is operational if: Has at least one doctor assigned AND not manually marked as closed
+  - Branch is non-operational if: No doctor assigned OR manually marked as closed
+  - Operational status affects staff allocation requirements
+  - Non-operational branches require minimal or no staff allocation
+  - System should warn when assigning staff to non-operational branches
+
+### BR-BL-09: Preferred Staff per Position per Branch
+- **Description:** Each branch has preferred number of staff for each position
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - Preferred staff counts are branch-specific and position-specific
+  - Preferred counts act as constraints when allocating rotation staff
+  - System should prioritize meeting preferred staff counts when allocating rotation staff
+  - Preferred counts are configurable per branch per position
+  - Preferred counts are used as targets for staff allocation optimization
+
+### BR-BL-10: Minimum Daily Staff Constraints
+- **Description:** Each branch has minimum staff requirements for specific positions on each day
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - Minimum requirements are position-based (e.g., at least 1 front/counter staff and 1 doctor assistant = minimum 2 total)
+  - Minimum daily staff counts act as constraints when allocating rotation staff
+  - System must ensure minimum requirements are met before allocating additional staff
+  - Minimum requirements can vary by day (e.g., different requirements for weekdays vs weekends)
+  - Minimum requirements are configurable per branch per position per day
+  - Violations of minimum requirements should trigger warnings or prevent allocation
+
+### BR-BL-11: Doctor-Off Day Staff Requirement
+- **Description:** When a branch has no doctor assigned (doctor-off day), only one staff with "can manage a branch alone" skill is required
+- **Status:** ❌ Not Implemented
+- **Details:**
+  - Branches typically have 1-4 doctors assigned per day (doctor-on days)
+  - When a branch has no doctor assigned (doctor-off day), only one staff member is required
+  - The single staff member on doctor-off days must have the "can manage a branch alone" skill
+  - System should validate that assigned staff has the required skill before allowing assignment
+  - Doctor assignments determine whether a day is doctor-on or doctor-off
+  - Maximum 4 doctors can be assigned to a branch per day
+
 **Note:** Additional business rules, including conflict resolution rules, are documented in:
 - `docs/business-rules.md` - General business rules
 - `docs/conflict-resolution-rules.md` - Conflict resolution specific rules
@@ -379,5 +626,11 @@ To maximize the efficiency of allocating staff for branches of an aesthetic clin
 | 2024-12-19 | 1.0.0 | Initial requirements document created | System |
 | 2025-12-18 | 1.1.0 | Added conflict resolution requirements, data validation, notifications, reporting. Added references to security and conflict resolution documents. Updated status of FR-BL-03. | System |
 | 2025-12-21 | 1.2.0 | Added FR-BM-03: Standard Branch Codes requirement. Documented hardcoded list of 35 standard branch codes that must always be available in the system. | System |
+| 2025-12-21 | 1.3.0 | Enhanced FR-SM-01: Added leave day support requirement, table layout specification (left to right dates), and staff display requirements (nickname, full name, position). Enhanced FR-RM-03: Added nickname field requirement and clarified module separation. Updated FR-AUZ-01: Clarified Branch Manager capabilities. | System |
+| 2025-12-21 | 1.4.0 | Added BR-BL-06: Branch Manager Access Control. Branch managers can only add/arrange staff of their own branch, enforced by branch code. Updated FR-AUZ-01 to include branch manager restrictions. Implemented branch_id field in users table and middleware to enforce branch access. | System |
+| 2025-12-22 | 1.5.0 | Enhanced FR-RM-03: Added branch manager restrictions - manual entry only for branch staff of that branch, cannot add rotation staff. Enhanced FR-SM-01: Added requirement that branch manager can see rotation staff assigned to her branch (read-only), and requirement to display branch name and branch code in staff schedule menu. | System |
+| 2025-12-23 | 1.6.0 | Enhanced FR-RM-03: Clarified rotation staff management permissions - only Admin and Area Manager can view/add/edit/delete/import rotation staff. Enhanced FR-SM-02: Updated assignment workflow - rotation staff appear in branch table, admin/area manager selects dates. Added FR-SM-03: Rotation Staff Schedule Management - schedule edit menu for day off/leave/sick leave/working days. Updated FR-AUZ-01: Clarified role permissions for rotation staff management. | System |
+| 2025-12-23 | 1.7.0 | Enhanced FR-BM-02: Updated revenue tracking to support 365 days per year with multiple input sources (Excel import and doctor-calculated). Added FR-BM-04: Branch Operational Status - tracks daily operational status (operational/no doctor/closed). Added FR-BM-05: Doctor Data Structure - doctor information, branch assignments, and daily expected revenue. Added BR-BL-07: Branch Expected Revenue Calculation rules. Added BR-BL-08: Branch Operational Status rules. Updated FR-BM-01: Added reference to operational status. | System |
+| 2026-01-09 | 1.8.0 | Enhanced FR-BL-01: Added preferred staff per position per branch requirement. Added FR-BL-05: Minimum Daily Staff Constraints - position-based minimum requirements per branch per day. Enhanced FR-BM-04: Added doctor-on/doctor-off days logic with "can manage a branch alone" skill requirement. Added FR-RM-04: Staff Skills and Qualifications - tracks staff skills including "can manage a branch alone". Added BR-BL-09: Preferred Staff per Position per Branch rules. Added BR-BL-10: Minimum Daily Staff Constraints rules. Added BR-BL-11: Doctor-Off Day Staff Requirement rules. | System |
 
 

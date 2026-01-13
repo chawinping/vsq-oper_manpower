@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { authApi, User } from '@/lib/api/auth';
+import { useUser } from '@/contexts/UserContext';
 import { settingsApi, SystemSetting, UpdateSettingRequest } from '@/lib/api/settings';
-import AppLayout from '@/components/layout/AppLayout';
 
 export default function SystemSettingsPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const { user, loading: userLoading } = useUser();
   const [settings, setSettings] = useState<SystemSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -21,32 +20,30 @@ export default function SystemSettingsPage() {
   const [newDescription, setNewDescription] = useState('');
 
   useEffect(() => {
+    // Check if user has permission
+    if (!userLoading && user && user.role !== 'admin') {
+      router.push('/dashboard');
+      return;
+    }
+  }, [user, userLoading, router]);
+
+  useEffect(() => {
     const fetchData = async () => {
       try {
-        const userData = await authApi.getMe();
-        if (!userData) {
-          throw new Error('User data not available');
+        if (user?.role === 'admin') {
+          await loadSettings();
         }
-        setUser(userData);
-        
-        if (!userData.role || userData.role !== 'admin') {
-          router.push('/dashboard');
-          return;
-        }
-
-        await loadSettings();
       } catch (error: any) {
         console.error('Failed to fetch data:', error);
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          router.push('/login');
-        }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-  }, [router]);
+    if (user && user.role === 'admin') {
+      fetchData();
+    }
+  }, [user]);
 
   const loadSettings = async () => {
     try {
@@ -107,7 +104,7 @@ export default function SystemSettingsPage() {
     }
   };
 
-  if (loading) {
+  if (userLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-neutral-text-secondary">Loading...</div>
@@ -115,8 +112,12 @@ export default function SystemSettingsPage() {
     );
   }
 
+  if (user?.role !== 'admin') {
+    return null;
+  }
+
   return (
-    <AppLayout>
+    <>
       <div className="p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-neutral-text-primary mb-2">System Settings</h1>
@@ -285,7 +286,7 @@ export default function SystemSettingsPage() {
           </div>
         </div>
       )}
-    </AppLayout>
+    </>
   );
 }
 

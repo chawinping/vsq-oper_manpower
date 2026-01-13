@@ -58,19 +58,34 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	session.Set("user_id", user.ID.String())
 	session.Set("username", user.Username)
 	session.Set("role", role.Name)
+	if user.BranchID != nil {
+		session.Set("branch_id", user.BranchID.String())
+	}
 	if err := session.Save(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save session"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"user": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"email":    user.Email,
-			"role":     role.Name,
-		},
-	})
+	response := gin.H{
+		"id":       user.ID,
+		"username": user.Username,
+		"email":    user.Email,
+		"role":     role.Name,
+	}
+	if user.BranchID != nil {
+		response["branch_id"] = user.BranchID
+		// Fetch branch details to include branch name and code
+		branch, err := h.repos.Branch.GetByID(*user.BranchID)
+		if err != nil {
+			// Log error but don't fail the request
+			c.Error(err)
+		} else if branch != nil {
+			response["branch_name"] = branch.Name
+			response["branch_code"] = branch.Code
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user": response})
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
@@ -110,14 +125,26 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"user": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"email":    user.Email,
-			"role":     role.Name,
-		},
-	})
+	response := gin.H{
+		"id":       user.ID,
+		"username": user.Username,
+		"email":    user.Email,
+		"role":     role.Name,
+	}
+	if user.BranchID != nil {
+		response["branch_id"] = user.BranchID
+		// Fetch branch details to include branch name and code
+		branch, err := h.repos.Branch.GetByID(*user.BranchID)
+		if err != nil {
+			// Log error but don't fail the request
+			c.Error(err)
+		} else if branch != nil {
+			response["branch_name"] = branch.Name
+			response["branch_code"] = branch.Code
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user": response})
 }
 
 func (h *AuthHandler) ListRoles(c *gin.Context) {

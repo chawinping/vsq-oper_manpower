@@ -1,7 +1,7 @@
 ---
 description: VSQ Operations Manpower Project - Cursor Rules
 alwaysApply: true
-lastUpdated: 2025-12-15 18:24:27
+lastUpdated: 2026-01-08 15:35:47
 ---
 
 # VSQ Operations Manpower - Cursor Rules
@@ -18,10 +18,11 @@ lastUpdated: 2025-12-15 18:24:27
 **Rule:** Check documentation before implementing features
 
 Before implementing any feature:
-1. Check `requirements.md` or `docs/requirements.md` for existing requirements
-2. Check `docs/` directory for relevant documentation
-3. If requirements don't exist, create or update them first
-4. Reference requirement IDs when implementing
+1. Check `SOFTWARE_REQUIREMENTS.md` or `docs/requirements.md` for existing requirements
+2. Check `docs/` directory for relevant documentation (see Rule #8 for specific docs)
+3. Check `SOFTWARE_ARCHITECTURE.md` for architecture guidance
+4. If requirements don't exist, create or update them first
+5. Reference requirement IDs when implementing
 
 **Why it's reusable:** Prevents duplicate work, ensures alignment with project goals, maintains documentation quality.
 
@@ -32,7 +33,8 @@ Before implementing any feature:
 **Rule:** Verify requirements exist before coding
 
 Before writing code for a new feature:
-- Check if requirement exists in `requirements.md` or `docs/requirements.md`
+- Check if requirement exists in `SOFTWARE_REQUIREMENTS.md` or `docs/requirements.md`
+- Review `docs/requirements-analysis.md` and `docs/requirements-gap-analysis.md` for context
 - If requirement doesn't exist, ask user if they want to:
   1. Create the requirement first, or
   2. Proceed with implementation and document later
@@ -76,10 +78,17 @@ lastUpdated: YYYY-MM-DD
 When updating version numbers:
 - Check `package.json` (frontend/backend) for current version
 - Use semantic versioning (MAJOR.MINOR.PATCH)
+- Reference `docs/versioning-rules.md` and `docs/version-build-process.md` for detailed versioning procedures
 - Update version in:
   - `package.json` files
-  - `requirements.md` (if version tracking is used)
-  - Component-specific version files
+  - `SOFTWARE_REQUIREMENTS.md` (if version tracking is used)
+  - Component-specific version files:
+    - `frontend/VERSION.json` and `frontend/public/VERSION.json` (must be kept in sync)
+    - `backend/VERSION.json`
+    - `backend/DATABASE_VERSION.json`
+- Use `scripts/update-version.ps1` for version number updates
+- Use `scripts/update-build-timestamp.ps1` for build timestamp updates
+- Build timestamps are automatically updated during build (see `docs/version-build-process.md`)
 - Update `CHANGELOG.md` with version changes
 
 **Why it's reusable:** Maintains version consistency, helps with release management, tracks changes.
@@ -140,7 +149,8 @@ All code should:
 **Rule:** Document and test business rules
 
 When implementing business rules:
-- Document the rule in `requirements.md` or `docs/business-rules.md`
+- Document the rule in `SOFTWARE_REQUIREMENTS.md` or `docs/business-rules.md`
+- Review `docs/conflict-resolution-rules.md` for conflict handling rules
 - Assign a Business Rule ID (BR-[Module]-[Number])
 - Write unit tests that verify the rule
 - Add comments in code referencing the BR-ID
@@ -155,14 +165,18 @@ When implementing business rules:
 **Rule:** Update relevant documentation when code changes
 
 When code changes affect:
-- **Business logic** → Update requirements document
+- **Business logic** → Update `SOFTWARE_REQUIREMENTS.md` or `docs/business-rules.md`
 - **API endpoints** → Update API documentation/swagger
-- **Deployment** → Update deployment guide
-- **Development** → Update development guide
-- **Major changes** → Update CHANGELOG.md
-- **Security** → Reference security guide
+- **Deployment** → Update `docs/deployment-guide.md` or `docs/STAGING_PRODUCTION_SETUP.md`
+- **Development** → Update `docs/development-guide.md`, `docs/docker-dev-hot-reload.md`, `docs/hybrid-development-setup.md`
+- **Docker configuration** → Update `docs/docker-compose-commands.md` or `docs/docker-setup-analysis.md`
+- **Major changes** → Update `CHANGELOG.md`
+- **Security** → Update `docs/security-requirements.md`
 - **Performance** → Reference performance guide
-- **Database schema** → Update database schema documentation
+- **Database schema** → Update `docs/database-current-state.md` or database schema documentation
+- **Branch-related changes** → Update branch documentation (`docs/branch-*.md` files)
+- **Rotation staff changes** → Update rotation documentation (`docs/rotation-*.md` files)
+- **Versioning** → Update `docs/versioning-rules.md` or `docs/version-build-process.md`
 
 **Why it's reusable:** Keeps documentation in sync with code, reduces knowledge gaps.
 
@@ -268,11 +282,13 @@ When user asks to "update CHANGELOG" or "add to CHANGELOG":
 **Rule:** Clear protocol for handling uncertainty
 
 When unsure about implementation details:
-1. **Check requirements document first** (`requirements.md` or `docs/requirements.md`)
-2. Check existing codebase for similar patterns
-3. If unclear, ask user for clarification
-4. Update requirements document with clarification
-5. Then proceed with implementation
+1. **Check requirements document first** (`SOFTWARE_REQUIREMENTS.md` or `docs/requirements.md`)
+2. Check `SOFTWARE_ARCHITECTURE.md` for architecture patterns
+3. Review `docs/requirements-analysis.md` and `docs/requirements-gap-analysis.md` for context
+4. Check existing codebase for similar patterns
+5. If unclear, ask user for clarification
+6. Update requirements document with clarification
+7. Then proceed with implementation
 
 **Why it's reusable:** Prevents incorrect assumptions, ensures alignment, maintains documentation.
 
@@ -284,15 +300,56 @@ When unsure about implementation details:
 
 This project has:
 - `backend/` - Backend application code
+  - `backend/cmd/` - Command-line utilities (`check-link-user/`, `create-branch-managers/`, `update-admin-password/`, `server/`)
+  - `backend/internal/` - Internal packages (handlers, repositories, usecases, domain, middleware)
+  - `backend/pkg/` - Public packages (excel, mcp, timezone)
+  - `backend/tests/` - Test files
+  - `backend/VERSION.json` - Backend version file
+  - `backend/DATABASE_VERSION.json` - Database version file
+  - `backend/Dockerfile` and `backend/Dockerfile.dev` - Docker build files
+  - `backend/go.mod` and `backend/go.sum` - Go module files
 - `frontend/` - Frontend application code
-- `docs/` - Documentation (create if needed)
-- `requirements.md` - Project requirements (create if needed)
-- `CHANGELOG.md` - Project changelog (create if needed)
+  - `frontend/src/` - Source code (app, components, contexts, lib)
+  - `frontend/public/` - Public assets (locales, VERSION.json)
+  - `frontend/tests/` - E2E tests (Playwright)
+  - `frontend/VERSION.json` and `frontend/public/VERSION.json` - Frontend version files (must be kept in sync)
+  - `frontend/Dockerfile` and `frontend/Dockerfile.dev` - Docker build files
+  - `frontend/package.json` - Frontend dependencies
+  - `frontend/next.config.js` - Next.js configuration
+  - `frontend/playwright.config.ts` - Playwright test configuration
+  - `frontend/tailwind.config.js` - Tailwind CSS configuration
+  - `frontend/postcss.config.js` - PostCSS configuration
+- `docs/` - Documentation directory
+  - See Rule #8 for specific documentation files
+- `scripts/` - Deployment and utility scripts
+  - `scripts/deploy-production.ps1` - Production deployment script
+  - `scripts/deploy-staging.ps1` - Staging deployment script
+  - `scripts/backup-database.ps1` - Database backup utility
+  - `scripts/update-version.ps1` - Version number update script
+  - `scripts/update-build-timestamp.ps1` - Build timestamp update script (PowerShell)
+  - `scripts/update-build-timestamp.sh` - Build timestamp update script (Bash)
+  - `scripts/force-stop-containers.ps1` - Force stop containers utility
+  - `scripts/README.md` - Scripts documentation
+- `nginx/` - Nginx reverse proxy configuration
+  - `nginx/production.conf` - Production nginx configuration
+  - `nginx/staging.conf` - Staging nginx configuration
+  - `nginx/ssl/` - SSL certificates (production/, staging/)
+  - `nginx/logs/` - Nginx log files
+  - `nginx/README.md` - Nginx documentation
+- `docker-compose.yml` - Development Docker Compose configuration
+- `docker-compose.staging.yml` - Staging Docker Compose configuration
+- `docker-compose.production.yml` - Production Docker Compose configuration
+- `SOFTWARE_REQUIREMENTS.md` - Project requirements specification
+- `SOFTWARE_ARCHITECTURE.md` - Software architecture documentation
+- `PROJECT_SETUP_EXPORT.md` - Project setup documentation
+- `CHANGELOG.md` - Project changelog
 
 When creating files:
 - Place backend code in `backend/`
 - Place frontend code in `frontend/`
 - Place documentation in `docs/` or root directory
+- Place deployment scripts in `scripts/`
+- Place nginx configurations in `nginx/`
 - Follow existing directory structure
 
 **Why it's reusable:** Maintains organization, prevents file clutter, improves navigation.
@@ -322,9 +379,10 @@ When creating or updating API endpoints:
 **Rule:** Write tests for new features
 
 When implementing features:
-- Write unit tests for business logic
+- Write unit tests for business logic (Go tests in `backend/tests/`)
 - Write integration tests for API endpoints
 - Write frontend component tests where applicable
+- Write E2E tests using Playwright (see `frontend/playwright.config.ts` and `frontend/tests/e2e/`)
 - Aim for meaningful test coverage
 - Update tests when requirements change
 
@@ -384,18 +442,20 @@ When creating or updating files that require timestamps:
 ## Quick Reference Checklist
 
 When working on this project, ensure:
-- [ ] Checked requirements document before implementing
+- [ ] Checked `SOFTWARE_REQUIREMENTS.md` before implementing
 - [ ] Verified current directory before running commands
 - [ ] Used requirement IDs in code and commits
-- [ ] Updated relevant documentation
+- [ ] Updated relevant documentation (see Rule #8)
 - [ ] Used appropriate status indicators
 - [ ] Followed code quality standards
-- [ ] Updated CHANGELOG for significant changes
+- [ ] Updated `CHANGELOG.md` for significant changes
 - [ ] Used Windows-appropriate commands (PowerShell/CMD)
 - [ ] Used absolute paths when needed
 - [ ] Asked for clarification when unsure
 - [ ] Used current system date/time for timestamps (not hardcoded dates)
 - [ ] Updated timestamps when modifying files
+- [ ] Updated version files when making code changes (see Rule #4)
+- [ ] Referenced appropriate documentation files (see Rule #8)
 
 ---
 

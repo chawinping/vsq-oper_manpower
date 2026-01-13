@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { authApi, User } from '@/lib/api/auth';
+import { authApi } from '@/lib/api/auth';
+import { useUser } from '@/contexts/UserContext';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -22,34 +23,25 @@ const navItems: NavItem[] = [
   { label: 'Rotation Scheduling', href: '/rotation-scheduling', roles: ['admin', 'area_manager', 'district_manager'] },
   { label: 'Branch Management', href: '/branch-management', roles: ['admin', 'area_manager', 'district_manager'] },
   { label: 'Users', href: '/users', roles: ['admin'] },
+  { label: 'Positions', href: '/positions', roles: ['admin'] },
   { label: 'System Settings', href: '/system-settings', roles: ['admin'] },
 ];
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, loading } = useUser();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const userData = await authApi.getMe();
-        setUser(userData);
-      } catch (error: any) {
-        console.error('Failed to fetch user:', error);
-        // Only redirect if not already on login page
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          router.push('/login');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Skip layout for login page
+  if (pathname === '/login') {
+    return <>{children}</>;
+  }
 
-    fetchUser();
-  }, [router]);
+  // Skip loading check for root page - it handles its own redirect
+  if (pathname === '/') {
+    return <>{children}</>;
+  }
 
   const handleLogout = async () => {
     try {
@@ -138,7 +130,20 @@ export default function AppLayout({ children }: AppLayoutProps) {
           <div className="flex items-center gap-4">
             {user && (
               <span className="text-sm text-neutral-text-secondary">
-                {user.username} <span className="text-neutral-text-primary">({user.role})</span>
+                {user.role === 'branch_manager' && user.branch_code && user.branch_name ? (
+                  <>
+                    <span className="text-neutral-text-primary font-medium">
+                      {user.branch_code} - {user.branch_name}
+                    </span>
+                    <span className="mx-2">|</span>
+                    <span>{user.username}</span>
+                    <span className="text-neutral-text-primary"> ({user.role})</span>
+                  </>
+                ) : (
+                  <>
+                    {user.username} <span className="text-neutral-text-primary">({user.role})</span>
+                  </>
+                )}
               </span>
             )}
             <button

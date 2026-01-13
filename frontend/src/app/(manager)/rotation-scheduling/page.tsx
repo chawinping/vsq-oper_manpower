@@ -2,40 +2,33 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { authApi, User } from '@/lib/api/auth';
-import RotationAssignmentView from '@/components/rotation/RotationAssignmentView';
-import AppLayout from '@/components/layout/AppLayout';
+import { useUser } from '@/contexts/UserContext';
+import BranchRotationTable from '@/components/rotation/BranchRotationTable';
+import RotationStaffList from '@/components/rotation/RotationStaffList';
+import { Staff } from '@/lib/api/staff';
 
 export default function RotationSchedulingPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, loading } = useUser();
+  const [selectedRotationStaff, setSelectedRotationStaff] = useState<Staff[]>([]);
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const userData = await authApi.getMe();
-        if (!userData) {
-          throw new Error('User data not available');
-        }
-        setUser(userData);
-        
-        // Check if user has permission
-        if (!userData.role || !['admin', 'area_manager', 'district_manager'].includes(userData.role)) {
-          router.push('/dashboard');
-        }
-      } catch (error: any) {
-        console.error('Failed to fetch user:', error);
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          router.push('/login');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
+    // Check if user has permission - only admin and area_manager can assign rotation staff
+    if (!loading && user && !['admin', 'area_manager'].includes(user.role)) {
+      router.push('/dashboard');
+    }
+  }, [user, loading, router]);
 
-    fetchUser();
-  }, [router]);
+  const handleAddRotationStaff = (staff: Staff) => {
+    // Add staff if not already in the list
+    if (!selectedRotationStaff.find(s => s.id === staff.id)) {
+      setSelectedRotationStaff([...selectedRotationStaff, staff]);
+    }
+  };
+
+  const handleRemoveRotationStaff = (staffId: string) => {
+    setSelectedRotationStaff(selectedRotationStaff.filter(s => s.id !== staffId));
+  };
 
   if (loading) {
     return (
@@ -46,18 +39,26 @@ export default function RotationSchedulingPage() {
   }
 
   return (
-    <AppLayout>
-      <div className="p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-neutral-text-primary mb-2">Rotation Staff Scheduling</h1>
-          <p className="text-sm text-neutral-text-secondary">Assign rotation staff to branches</p>
-        </div>
-
-        <div className="card">
-          <RotationAssignmentView />
-        </div>
+    <div className="p-6 space-y-4">
+      <div className="mb-4">
+        <h1 className="text-2xl font-semibold text-neutral-text-primary inline">
+          Rotation Staff Scheduling
+          <span className="text-sm font-normal text-neutral-text-secondary ml-3">Manage rotation staff and assign them to branches</span>
+        </h1>
       </div>
-    </AppLayout>
+
+      {/* Rotation Staff List Table */}
+      <RotationStaffList 
+        onAddToAssignment={handleAddRotationStaff}
+        selectedStaffIds={selectedRotationStaff.map(s => s.id)}
+      />
+
+      {/* Branch Rotation Assignment Table */}
+      <BranchRotationTable 
+        manuallyAddedStaff={selectedRotationStaff}
+        onRemoveStaff={handleRemoveRotationStaff}
+      />
+    </div>
   );
 }
 

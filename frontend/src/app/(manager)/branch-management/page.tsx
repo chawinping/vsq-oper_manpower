@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { authApi, User } from '@/lib/api/auth';
+import { useEffect, useState, Fragment } from 'react';
+import { useUser } from '@/contexts/UserContext';
 import { branchApi, Branch, CreateBranchRequest } from '@/lib/api/branch';
 import { format, subDays } from 'date-fns';
-import AppLayout from '@/components/layout/AppLayout';
 
 interface RevenueData {
   id: string;
@@ -16,8 +14,7 @@ interface RevenueData {
 }
 
 export default function BranchManagementPage() {
-  const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useUser();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -39,21 +36,18 @@ export default function BranchManagementPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const userData = await authApi.getMe();
-        setUser(userData);
         await loadBranches();
       } catch (error: any) {
         console.error('Failed to fetch data:', error);
-        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          router.push('/login');
-        }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-  }, [router]);
+    if (user) {
+      fetchData();
+    }
+  }, [user]);
 
   const loadBranches = async () => {
     try {
@@ -138,7 +132,7 @@ export default function BranchManagementPage() {
   const canManage = user?.role === 'admin' || user?.role === 'area_manager' || user?.role === 'district_manager';
 
   return (
-    <AppLayout>
+    <Fragment>
       <div className="p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-neutral-text-primary mb-2">Branch Management</h1>
@@ -416,7 +410,7 @@ export default function BranchManagementPage() {
           </div>
         </div>
       )}
-    </AppLayout>
+    </Fragment>
   );
 }
 

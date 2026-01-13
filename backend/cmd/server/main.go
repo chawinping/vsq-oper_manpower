@@ -76,6 +76,12 @@ func main() {
 	// API routes
 	api := r.Group("/api")
 	{
+		// Version endpoint (public)
+		v1 := api.Group("/v1")
+		{
+			v1.GET("/version", h.Version.GetVersion)
+		}
+
 		// Authentication routes
 		auth := api.Group("/auth")
 		{
@@ -109,14 +115,16 @@ func main() {
 			{
 				positions.GET("", h.Position.List)
 				positions.GET("/:id", h.Position.GetByID)
+				positions.PUT("/:id", middleware.RequireRole("admin"), h.Position.Update)
 			}
 
 			// Staff management
 			staff := protected.Group("/staff")
+			staff.Use(middleware.RequireBranchAccess())
 			{
 				staff.GET("", h.Staff.List)
-				staff.POST("", middleware.RequireRole("admin", "area_manager", "district_manager"), h.Staff.Create)
-				staff.PUT("/:id", middleware.RequireRole("admin", "area_manager", "district_manager"), h.Staff.Update)
+				staff.POST("", middleware.RequireRole("admin", "area_manager", "district_manager", "branch_manager"), h.Staff.Create)
+				staff.PUT("/:id", middleware.RequireRole("admin", "area_manager", "district_manager", "branch_manager"), h.Staff.Update)
 				staff.DELETE("/:id", middleware.RequireRole("admin"), h.Staff.Delete)
 				staff.POST("/import", middleware.RequireRole("admin", "area_manager", "district_manager"), h.Staff.Import)
 			}
@@ -133,6 +141,7 @@ func main() {
 
 			// Staff scheduling
 			schedules := protected.Group("/schedules")
+			schedules.Use(middleware.RequireBranchAccess())
 			{
 				schedules.GET("/branch/:branchId", h.Schedule.GetBranchSchedule)
 				schedules.POST("", middleware.RequireRole("branch_manager", "admin"), h.Schedule.Create)
@@ -144,9 +153,32 @@ func main() {
 			{
 				rotation.GET("/assignments", h.Rotation.GetAssignments)
 				rotation.POST("/assign", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.Assign)
+				rotation.POST("/bulk-assign", middleware.RequireRole("area_manager", "admin"), h.Rotation.BulkAssign)
 				rotation.DELETE("/assign/:id", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.RemoveAssignment)
 				rotation.GET("/suggestions", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.GetSuggestions)
 				rotation.POST("/regenerate-suggestions", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.RegenerateSuggestions)
+				rotation.GET("/eligible-staff/:branchId", middleware.RequireRole("area_manager", "admin"), h.Rotation.GetEligibleStaff)
+			}
+
+			// Effective branches management
+			effectiveBranches := protected.Group("/effective-branches")
+			effectiveBranches.Use(middleware.RequireRole("admin", "area_manager", "district_manager"))
+			{
+				effectiveBranches.GET("/rotation-staff/:rotationStaffId", h.EffectiveBranch.GetByRotationStaffID)
+				effectiveBranches.POST("", h.EffectiveBranch.Create)
+				effectiveBranches.DELETE("/:id", h.EffectiveBranch.Delete)
+				effectiveBranches.PUT("/bulk-update", h.EffectiveBranch.BulkUpdate)
+			}
+
+			// Areas of Operation management (Master Data)
+			areasOfOperation := protected.Group("/areas-of-operation")
+			areasOfOperation.Use(middleware.RequireRole("admin", "area_manager", "district_manager"))
+			{
+				areasOfOperation.GET("", h.AreaOfOperation.List)
+				areasOfOperation.GET("/:id", h.AreaOfOperation.GetByID)
+				areasOfOperation.POST("", middleware.RequireRole("admin"), h.AreaOfOperation.Create)
+				areasOfOperation.PUT("/:id", middleware.RequireRole("admin"), h.AreaOfOperation.Update)
+				areasOfOperation.DELETE("/:id", middleware.RequireRole("admin"), h.AreaOfOperation.Delete)
 			}
 
 			// System settings

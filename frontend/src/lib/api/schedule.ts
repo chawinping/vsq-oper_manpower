@@ -1,11 +1,14 @@
 import apiClient from './client';
 
+export type ScheduleStatus = 'working' | 'off' | 'leave' | 'sick_leave';
+
 export interface StaffSchedule {
   id: string;
   staff_id: string;
   branch_id: string;
   date: string;
-  is_working_day: boolean;
+  schedule_status: ScheduleStatus;
+  is_working_day: boolean; // Deprecated: kept for backward compatibility
   created_by: string;
   created_at: string;
 }
@@ -14,7 +17,8 @@ export interface CreateScheduleRequest {
   staff_id: string;
   branch_id: string;
   date: string;
-  is_working_day: boolean;
+  schedule_status?: ScheduleStatus;
+  is_working_day?: boolean; // Deprecated: kept for backward compatibility
 }
 
 export const scheduleApi = {

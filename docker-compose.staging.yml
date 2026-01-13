@@ -77,14 +77,14 @@ services:
         - BUILD_ENV=staging
     container_name: vsq-manpower-frontend-staging
     ports:
-      - "${FRONTEND_PORT:-4000}:3000"
+      - "${FRONTEND_PORT:-4000}:4000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8081/api}
       NODE_ENV: production
-      PORT: 3000
+      PORT: 4000
       ENVIRONMENT: staging
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -134,6 +134,8 @@ volumes:
 networks:
   vsq-staging-network:
     driver: bridge
+
+
 
 
 

@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -237,5 +238,130 @@ func (h *RotationHandler) RegenerateSuggestions(c *gin.Context) {
 	// Regenerate is the same as GetSuggestions for now
 	// In production, this would request new suggestions from MCP
 	h.GetSuggestions(c)
+}
+
+// GetEligibleStaff returns rotation staff eligible for a specific branch
+func (h *RotationHandler) GetEligibleStaff(c *gin.Context) {
+	branchIDStr := c.Param("branchId")
+	if branchIDStr == "" {
+		branchIDStr = c.Query("branch_id")
+	}
+
+	if branchIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "branch_id is required"})
+		return
+	}
+
+	branchID, err := uuid.Parse(branchIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid branch_id"})
+		return
+	}
+
+	// Get effective branches for this branch (rotation staff eligible for this branch)
+	effectiveBranches, err := h.repos.EffectiveBranch.GetByBranchID(branchID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get all rotation staff IDs from effective branches
+	rotationStaffIDs := make(map[uuid.UUID]int) // Map of staff ID to level
+	for _, eb := range effectiveBranches {
+		rotationStaffIDs[eb.RotationStaffID] = eb.Level
+	}
+
+	// Get all rotation staff
+	allRotationStaff, err := h.repos.Staff.GetRotationStaff()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Filter to only eligible staff and add level information
+	type EligibleStaff struct {
+		*models.Staff
+		AssignmentLevel int `json:"assignment_level"`
+	}
+
+	eligibleStaff := make([]EligibleStaff, 0)
+	for _, staff := range allRotationStaff {
+		if level, exists := rotationStaffIDs[staff.ID]; exists {
+			eligibleStaff = append(eligibleStaff, EligibleStaff{
+				Staff:           staff,
+				AssignmentLevel: level,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"eligible_staff": eligibleStaff})
+}
+
+type BulkAssignRequest struct {
+	Assignments []struct {
+		RotationStaffID uuid.UUID `json:"rotation_staff_id" binding:"required"`
+		Dates            []string  `json:"dates" binding:"required"`
+		AssignmentLevel int       `json:"assignment_level" binding:"required"`
+	} `json:"assignments" binding:"required"`
+	BranchID uuid.UUID `json:"branch_id" binding:"required"`
+}
+
+// BulkAssign allows assigning multiple rotation staff to multiple dates at once
+func (h *RotationHandler) BulkAssign(c *gin.Context) {
+	var req BulkAssignRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userIDStr := c.MustGet("user_id").(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	createdAssignments := make([]*models.RotationAssignment, 0)
+	errors := make([]string, 0)
+
+	for _, assignment := range req.Assignments {
+		if assignment.AssignmentLevel != 1 && assignment.AssignmentLevel != 2 {
+			errors = append(errors, fmt.Sprintf("Invalid assignment_level for staff %s", assignment.RotationStaffID))
+			continue
+		}
+
+		for _, dateStr := range assignment.Dates {
+			date, err := time.Parse("2006-01-02", dateStr)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("Invalid date format: %s", dateStr))
+				continue
+			}
+
+			assignmentModel := &models.RotationAssignment{
+				ID:              uuid.New(),
+				RotationStaffID: assignment.RotationStaffID,
+				BranchID:        req.BranchID,
+				Date:            date,
+				AssignmentLevel: assignment.AssignmentLevel,
+				AssignedBy:      userID,
+			}
+
+			if err := h.repos.Rotation.Create(assignmentModel); err != nil {
+				// Check if it's a duplicate key error (already assigned) - ignore it
+				errStr := err.Error()
+				if !strings.Contains(errStr, "duplicate key") && !strings.Contains(errStr, "UNIQUE constraint") {
+					errors = append(errors, fmt.Sprintf("Failed to assign %s on %s: %v", assignment.RotationStaffID, dateStr, err))
+				}
+			} else {
+				createdAssignments = append(createdAssignments, assignmentModel)
+			}
+		}
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"created": len(createdAssignments),
+		"assignments": createdAssignments,
+		"errors": errors,
+	})
 }
 

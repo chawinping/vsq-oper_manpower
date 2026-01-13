@@ -27,6 +27,15 @@ func RequireAuth() gin.HandlerFunc {
 		}
 
 		c.Set("user_id", userIDStr)
+		
+		// Set branch_id if available (for branch managers)
+		branchID := session.Get("branch_id")
+		if branchID != nil {
+			if branchIDStr, ok := branchID.(string); ok {
+				c.Set("branch_id", branchIDStr)
+			}
+		}
+		
 		c.Next()
 	}
 }

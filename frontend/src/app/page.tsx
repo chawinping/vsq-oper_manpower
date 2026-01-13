@@ -13,8 +13,9 @@ export default function Home() {
         await authApi.getMe();
         // User is authenticated, redirect to dashboard
         router.replace('/dashboard');
-      } catch (error) {
-        // User is not authenticated, redirect to login
+      } catch (error: any) {
+        // User is not authenticated or backend is down, redirect to login
+        // Network errors and timeouts will also redirect to login
         // Only redirect if not already on login page to prevent loops
         if (window.location.pathname !== '/login') {
           router.replace('/login');

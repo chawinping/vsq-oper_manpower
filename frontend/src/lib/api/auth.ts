@@ -10,6 +10,9 @@ export interface User {
   username: string;
   email: string;
   role: string;
+  branch_id?: string;
+  branch_name?: string;
+  branch_code?: string;
 }
 
 export const authApi = {

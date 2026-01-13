@@ -2,25 +2,40 @@ import apiClient from './client';
 
 export interface Staff {
   id: string;
-  name: string;
+  nickname?: string;
+  name: string; // Full name
   staff_type: 'branch' | 'rotation';
   position_id: string;
+  position?: {
+    id: string;
+    name: string;
+  };
   branch_id?: string;
   coverage_area?: string;
+  area_of_operation_id?: string;
+  area_of_operation?: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  skill_level: number; // Rating 0-10
   created_at: string;
   updated_at: string;
 }
 
 export interface CreateStaffRequest {
+  nickname?: string;
   name: string;
   staff_type: 'branch' | 'rotation';
   position_id: string;
   branch_id?: string;
   coverage_area?: string;
+  area_of_operation_id?: string;
+  skill_level?: number; // Rating 0-10
 }
 
 export const staffApi = {
-  list: async (filters?: { staff_type?: string; branch_id?: string; position_id?: string }) => {
+  list: async (filters?: { staff_type?: string; branch_id?: string; position_id?: string; area_of_operation_id?: string }) => {
     const response = await apiClient.get('/staff', { params: filters });
     return (response.data.staff || []) as Staff[];
   },

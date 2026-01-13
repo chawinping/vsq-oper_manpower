@@ -76,6 +76,51 @@ Creates a backup of the database for the specified environment.
 - Keeps last 10 backups (auto-cleanup)
 - Stores backups in `backups/<environment>/` directory
 
+### `update-version.ps1`
+
+Updates version numbers and build timestamps for frontend, backend, and database components.
+
+**Usage:**
+```powershell
+# Update frontend version (patch bump)
+.\scripts\update-version.ps1 -Component frontend -BumpType patch
+
+# Update backend version (minor bump)
+.\scripts\update-version.ps1 -Component backend -BumpType minor
+
+# Update database version (major bump)
+.\scripts\update-version.ps1 -Component database -BumpType major
+
+# Update all components (patch bump)
+.\scripts\update-version.ps1 -Component all -BumpType patch
+```
+
+**Bump Types:**
+- `patch`: Increment patch version (1.0.0 -> 1.0.1) - for bug fixes
+- `minor`: Increment minor version (1.0.0 -> 1.1.0) - for new features
+- `major`: Increment major version (1.0.0 -> 2.0.0) - for breaking changes
+
+**Features:**
+- Automatically updates version numbers using semantic versioning
+- Updates build timestamps to current time (Thailand timezone UTC+7)
+- Keeps frontend/VERSION.json and frontend/public/VERSION.json in sync
+- Updates buildDate and buildTime fields automatically
+
+**Examples:**
+```powershell
+# After fixing a frontend bug
+.\scripts\update-version.ps1 -Component frontend -BumpType patch
+
+# After adding a new backend feature
+.\scripts\update-version.ps1 -Component backend -BumpType minor
+
+# After database schema changes
+.\scripts\update-version.ps1 -Component database -BumpType patch
+
+# After a major refactor affecting all components
+.\scripts\update-version.ps1 -Component all -BumpType major
+```
+
 ## Environment Files
 
 Before running deployment scripts, ensure you have the appropriate environment file:

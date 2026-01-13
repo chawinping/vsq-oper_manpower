@@ -63,21 +63,44 @@ docker-compose up
 
 ### Local Development
 
-#### Backend
+#### Option 1: Run Locally (Recommended for Development)
 
+**Backend:**
 ```bash
 cd backend
 go mod download
 go run cmd/server/main.go
 ```
 
-#### Frontend
-
+**Frontend:**
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
+#### Option 2: Run with Docker (Hot Reloading Enabled)
+
+**Start all services with hot reloading:**
+```bash
+docker-compose --profile fullstack-dev up
+```
+
+This will:
+- Start backend with Air live reloading (auto-restarts on Go file changes)
+- Start frontend with Next.js hot module replacement (auto-recompiles on file changes)
+- Mount source code as volumes for instant file watching
+
+**Start individual services:**
+```bash
+# Backend only (with hot reloading)
+docker-compose --profile dev up backend-dev
+
+# Frontend only (with hot reloading)
+docker-compose --profile fullstack-dev up frontend-dev
+```
+
+**Note:** For Windows users, if file watching doesn't work properly, you may need to set `WATCHPACK_POLLING=true` in your environment or `.env` file.
 
 ## Environment Variables
 

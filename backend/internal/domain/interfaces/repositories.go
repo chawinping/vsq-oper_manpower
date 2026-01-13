@@ -34,9 +34,10 @@ type StaffRepository interface {
 }
 
 type StaffFilters struct {
-	StaffType *models.StaffType
-	BranchID  *uuid.UUID
-	PositionID *uuid.UUID
+	StaffType          *models.StaffType
+	BranchID           *uuid.UUID
+	PositionID         *uuid.UUID
+	AreaOfOperationID  *uuid.UUID
 }
 
 type PositionRepository interface {
@@ -77,6 +78,7 @@ type ScheduleRepository interface {
 	GetByStaffID(staffID uuid.UUID, startDate, endDate time.Time) ([]*models.StaffSchedule, error)
 	Update(schedule *models.StaffSchedule) error
 	Delete(id uuid.UUID) error
+	DeleteByStaffID(staffID uuid.UUID) error
 	GetMonthlyView(branchID uuid.UUID, year int, month int) ([]*models.StaffSchedule, error)
 }
 
@@ -86,6 +88,7 @@ type RotationRepository interface {
 	GetByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.RotationAssignment, error)
 	GetByRotationStaffID(rotationStaffID uuid.UUID, startDate, endDate time.Time) ([]*models.RotationAssignment, error)
 	Delete(id uuid.UUID) error
+	DeleteByRotationStaffID(rotationStaffID uuid.UUID) error
 	GetAssignments(filters RotationFilters) ([]*models.RotationAssignment, error)
 }
 
@@ -109,5 +112,14 @@ type AllocationRuleRepository interface {
 	GetByPositionID(positionID uuid.UUID) (*models.StaffAllocationRule, error)
 	Update(rule *models.StaffAllocationRule) error
 	List() ([]*models.StaffAllocationRule, error)
+}
+
+type AreaOfOperationRepository interface {
+	Create(aoo *models.AreaOfOperation) error
+	GetByID(id uuid.UUID) (*models.AreaOfOperation, error)
+	GetByCode(code string) (*models.AreaOfOperation, error)
+	Update(aoo *models.AreaOfOperation) error
+	Delete(id uuid.UUID) error
+	List(includeInactive bool) ([]*models.AreaOfOperation, error)
 }
 

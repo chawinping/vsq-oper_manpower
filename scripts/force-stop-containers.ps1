@@ -33,3 +33,6 @@ docker-compose --profile fullstack --profile fullstack-dev --profile dev down --
 Write-Host "Done! Containers should be stopped and removed." -ForegroundColor Green
 
 
+
+
+

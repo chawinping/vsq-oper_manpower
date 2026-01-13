@@ -20,10 +20,11 @@ func NewScheduleHandler(repos *postgres.Repositories) *ScheduleHandler {
 }
 
 type CreateScheduleRequest struct {
-	StaffID      uuid.UUID `json:"staff_id" binding:"required"`
-	BranchID     uuid.UUID `json:"branch_id" binding:"required"`
-	Date         string    `json:"date" binding:"required"`
-	IsWorkingDay bool      `json:"is_working_day"`
+	StaffID        uuid.UUID            `json:"staff_id" binding:"required"`
+	BranchID       uuid.UUID            `json:"branch_id" binding:"required"`
+	Date           string               `json:"date" binding:"required"`
+	ScheduleStatus models.ScheduleStatus `json:"schedule_status"`
+	IsWorkingDay   bool                 `json:"is_working_day"` // Deprecated: kept for backward compatibility
 }
 
 func (h *ScheduleHandler) GetBranchSchedule(c *gin.Context) {
@@ -32,6 +33,20 @@ func (h *ScheduleHandler) GetBranchSchedule(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid branch ID"})
 		return
+	}
+
+	// For branch managers, enforce their branch
+	role := c.GetString("role")
+	if role == "branch_manager" {
+		userBranchID, exists := c.Get("user_branch_id")
+		if exists {
+			if userBranchUUID, ok := userBranchID.(uuid.UUID); ok {
+				if userBranchUUID != branchID {
+					c.JSON(http.StatusForbidden, gin.H{"error": "You can only access schedules for your own branch"})
+					return
+				}
+			}
+		}
 	}
 
 	startDateStr := c.Query("start_date")
@@ -84,13 +99,37 @@ func (h *ScheduleHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// For branch managers, enforce their branch
+	role := c.GetString("role")
+	if role == "branch_manager" {
+		userBranchID, exists := c.Get("user_branch_id")
+		if exists {
+			if userBranchUUID, ok := userBranchID.(uuid.UUID); ok {
+				req.BranchID = userBranchUUID
+			}
+		} else {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Branch manager must be assigned to a branch"})
+			return
+		}
+	}
+
 	schedule := &models.StaffSchedule{
-		ID:           uuid.New(),
-		StaffID:      req.StaffID,
-		BranchID:     req.BranchID,
-		Date:         date,
-		IsWorkingDay: req.IsWorkingDay,
-		CreatedBy:    userID,
+		ID:             uuid.New(),
+		StaffID:        req.StaffID,
+		BranchID:       req.BranchID,
+		Date:           date,
+		ScheduleStatus: req.ScheduleStatus,
+		IsWorkingDay:   req.IsWorkingDay,
+		CreatedBy:      userID,
+	}
+	
+	// Set default schedule_status if not provided (backward compatibility)
+	if schedule.ScheduleStatus == "" {
+		if schedule.IsWorkingDay {
+			schedule.ScheduleStatus = models.ScheduleStatusWorking
+		} else {
+			schedule.ScheduleStatus = models.ScheduleStatusOff
+		}
 	}
 
 	if err := h.repos.Schedule.Create(schedule); err != nil {
@@ -115,6 +154,20 @@ func (h *ScheduleHandler) GetMonthlyView(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid branch ID"})
 		return
+	}
+
+	// For branch managers, enforce their branch
+	role := c.GetString("role")
+	if role == "branch_manager" {
+		userBranchID, exists := c.Get("user_branch_id")
+		if exists {
+			if userBranchUUID, ok := userBranchID.(uuid.UUID); ok {
+				if userBranchUUID != branchID {
+					c.JSON(http.StatusForbidden, gin.H{"error": "You can only access schedules for your own branch"})
+					return
+				}
+			}
+		}
 	}
 
 	year, err := strconv.Atoi(yearStr)

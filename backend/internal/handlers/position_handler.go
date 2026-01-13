@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"vsq-oper-manpower/backend/internal/domain/models"
 	"vsq-oper-manpower/backend/internal/repositories/postgres"
 )
 
@@ -47,6 +48,57 @@ func (h *PositionHandler) GetByID(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"position": position})
 }
+
+type UpdatePositionRequest struct {
+	Name              string  `json:"name" binding:"required"`
+	MinStaffPerBranch int     `json:"min_staff_per_branch"`
+	RevenueMultiplier float64 `json:"revenue_multiplier"`
+	DisplayOrder      int     `json:"display_order"`
+}
+
+func (h *PositionHandler) Update(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	// Check if position exists
+	existingPosition, err := h.repos.Position.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingPosition == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Position not found"})
+		return
+	}
+
+	var req UpdatePositionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	position := &models.Position{
+		ID:                id,
+		Name:              req.Name,
+		MinStaffPerBranch: req.MinStaffPerBranch,
+		RevenueMultiplier: req.RevenueMultiplier,
+		DisplayOrder:      req.DisplayOrder,
+		CreatedAt:         existingPosition.CreatedAt,
+	}
+
+	if err := h.repos.Position.Update(position); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"position": position})
+}
+
+
 
 
 

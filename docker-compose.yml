@@ -1,6 +1,6 @@
 services:
   postgres:
-    profiles: ["fullstack", "dev", "fullstack-dev"]
+    profiles: ["fullstack", "dev", "fullstack-dev", "backend-only", "hybrid-dev"]
     image: postgres:15-alpine
     container_name: vsq-manpower-db
     environment:
@@ -12,7 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vsq_user}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vsq_user} -d ${DB_NAME:-vsq_manpower}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,7 +37,7 @@ services:
       GIN_MODE: release
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4000,http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4000,http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:4000}
       MCP_SERVER_URL: ${MCP_SERVER_URL:-}
       MCP_API_KEY: ${MCP_API_KEY:-}
       MCP_ENABLED: ${MCP_ENABLED:-false}
@@ -53,7 +53,7 @@ services:
     restart: unless-stopped
 
   backend-dev:
-    profiles: ["dev", "fullstack-dev"]
+    profiles: ["dev", "fullstack-dev", "backend-only", "hybrid-dev"]
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
@@ -70,7 +70,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
       PORT: 8080
       GIN_MODE: debug
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4000,http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4000,http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:4000}
     volumes:
       - ./backend:/app
       - /app/tmp
@@ -88,14 +88,14 @@ services:
       dockerfile: Dockerfile
     container_name: vsq-manpower-frontend
     ports:
-      - "${FRONTEND_PORT:-4000}:3000"
+      - "${FRONTEND_PORT:-4000}:4000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8081/api}
       NODE_ENV: production
-      PORT: 3000
+      PORT: 4000
       ENVIRONMENT: ${ENVIRONMENT:-development}
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -109,17 +109,24 @@ services:
     profiles: ["fullstack-dev"]
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: vsq-manpower-frontend-dev
     ports:
-      - "${FRONTEND_PORT:-4000}:3000"
+      - "${FRONTEND_PORT:-4000}:4000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8081/api}
-      NODE_ENV: production
-      PORT: 3000
+      NODE_ENV: development
+      PORT: 4000
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-true}
+      NODE_OPTIONS: --max-old-space-size=4096
+    volumes:
+      # Mount source code for hot reloading
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/"]
       interval: 30s
       timeout: 10s
       retries: 3

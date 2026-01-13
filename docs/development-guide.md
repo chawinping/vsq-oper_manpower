@@ -1,8 +1,8 @@
 ---
 title: Development Guide
 description: Guide for developers working on VSQ Operations Manpower
-version: 1.2.0
-lastUpdated: 2025-12-18 22:09:56
+version: 1.3.0
+lastUpdated: 2025-12-22 19:14:30
 ---
 
 # Development Guide
@@ -71,24 +71,72 @@ Update `.env` files with appropriate values:
 
 ### 5. Start Development Servers
 
-#### Option A: Using Docker Compose (Recommended)
+#### Option A: Hybrid Development (Recommended for Memory Efficiency)
 
-**With Live Reload (Air):**
+**Recommended Setup:** Run frontend locally, backend and database in Docker.
+
+This approach saves memory (Next.js dev server uses 1-3GB+), provides faster hot reload, and better debugging experience.
+
+**Step 1: Start Backend and Database in Docker**
 ```powershell
-# Start database and backend with Air for live reloading
-docker-compose --profile dev up -d
+# Start PostgreSQL and backend-dev with Air live reloading
+docker-compose --profile hybrid-dev up -d
 
-# Or start full stack with development backend
-docker-compose --profile fullstack-dev up -d
+# Or use backend-only profile (same thing)
+docker-compose --profile backend-only up -d
+
+# View backend logs
+docker-compose --profile hybrid-dev logs -f backend-dev
 ```
 
-**Production Build:**
+**Step 2: Start Frontend Locally**
+```powershell
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies (first time only)
+npm install
+
+# Start Next.js development server
+npm run dev
+```
+
+**Access Points:**
+- Frontend: http://localhost:4000 (or http://127.0.0.1:4000)
+- Backend API: http://localhost:8081/api
+- Database: localhost:5434
+
+**Benefits:**
+- ✅ Lower memory usage (~2-3GB saved vs full Docker)
+- ✅ Faster file watching and hot reload
+- ✅ Better debugging experience
+- ✅ Native Next.js performance
+- ✅ Backend still isolated in Docker
+
+#### Option B: Full Docker Development (Alternative)
+
+**Use when:** You want complete isolation or don't have Node.js installed locally.
+
+**Start all services in Docker:**
+```powershell
+# Start database, backend, and frontend all in Docker
+docker-compose --profile fullstack-dev up -d
+
+# View logs
+docker-compose --profile fullstack-dev logs -f
+```
+
+**Note:** This uses more memory (~4-6GB total) due to Next.js dev server in Docker.
+
+#### Option C: Production Build (Testing)
+
+**For testing production builds:**
 ```powershell
 # Start all services with production builds
 docker-compose --profile fullstack up -d
 ```
 
-#### Option B: Local Development
+#### Option D: Fully Local Development
 
 **Backend with Air (Live Reload):**
 ```powershell
@@ -111,6 +159,8 @@ go run cmd/server/main.go
 cd frontend
 npm run dev
 ```
+
+**Note:** Requires PostgreSQL installed locally or running in Docker separately.
 
 ---
 
@@ -435,6 +485,7 @@ npm test
 
 | Date | Version | Changes | Author |
 |------|---------|---------|--------|
+| 2025-12-22 | 1.3.0 | Added hybrid development setup (frontend local, backend+db in Docker) for memory efficiency | - |
 | 2025-12-18 | 1.2.0 | Added API response handling rules for null array prevention | - |
 | 2024-12-19 | 1.0.0 | Initial development guide created | - |
 

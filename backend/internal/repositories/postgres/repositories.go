@@ -11,32 +11,34 @@ import (
 )
 
 type Repositories struct {
-	User            interfaces.UserRepository
-	Role            interfaces.RoleRepository
-	Staff           interfaces.StaffRepository
-	Position        interfaces.PositionRepository
-	Branch          interfaces.BranchRepository
-	EffectiveBranch interfaces.EffectiveBranchRepository
-	Revenue         interfaces.RevenueRepository
-	Schedule        interfaces.ScheduleRepository
-	Rotation        interfaces.RotationRepository
-	Settings        interfaces.SettingsRepository
-	AllocationRule  interfaces.AllocationRuleRepository
+	User             interfaces.UserRepository
+	Role             interfaces.RoleRepository
+	Staff            interfaces.StaffRepository
+	Position         interfaces.PositionRepository
+	Branch           interfaces.BranchRepository
+	EffectiveBranch  interfaces.EffectiveBranchRepository
+	Revenue          interfaces.RevenueRepository
+	Schedule         interfaces.ScheduleRepository
+	Rotation         interfaces.RotationRepository
+	Settings         interfaces.SettingsRepository
+	AllocationRule   interfaces.AllocationRuleRepository
+	AreaOfOperation  interfaces.AreaOfOperationRepository
 }
 
 func NewRepositories(db *sql.DB) *Repositories {
 	return &Repositories{
-		User:            NewUserRepository(db),
-		Role:            NewRoleRepository(db),
-		Staff:           NewStaffRepository(db),
-		Position:        NewPositionRepository(db),
-		Branch:          NewBranchRepository(db),
-		EffectiveBranch: NewEffectiveBranchRepository(db),
-		Revenue:         NewRevenueRepository(db),
-		Schedule:        NewScheduleRepository(db),
-		Rotation:        NewRotationRepository(db),
-		Settings:        NewSettingsRepository(db),
-		AllocationRule:  NewAllocationRuleRepository(db),
+		User:             NewUserRepository(db),
+		Role:             NewRoleRepository(db),
+		Staff:            NewStaffRepository(db),
+		Position:         NewPositionRepository(db),
+		Branch:           NewBranchRepository(db),
+		EffectiveBranch:  NewEffectiveBranchRepository(db),
+		Revenue:          NewRevenueRepository(db),
+		Schedule:         NewScheduleRepository(db),
+		Rotation:         NewRotationRepository(db),
+		Settings:         NewSettingsRepository(db),
+		AllocationRule:   NewAllocationRuleRepository(db),
+		AreaOfOperation:  NewAreaOfOperationRepository(db),
 	}
 }
 
@@ -50,38 +52,54 @@ func NewUserRepository(db *sql.DB) interfaces.UserRepository {
 }
 
 func (r *userRepository) Create(user *models.User) error {
-	query := `INSERT INTO users (id, username, email, password_hash, role_id) 
-	          VALUES ($1, $2, $3, $4, $5) RETURNING created_at, updated_at`
-	return r.db.QueryRow(query, user.ID, user.Username, user.Email, user.PasswordHash, user.RoleID).
+	query := `INSERT INTO users (id, username, email, password_hash, role_id, branch_id) 
+	          VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at, updated_at`
+	return r.db.QueryRow(query, user.ID, user.Username, user.Email, user.PasswordHash, user.RoleID, user.BranchID).
 		Scan(&user.CreatedAt, &user.UpdatedAt)
 }
 
 func (r *userRepository) GetByID(id uuid.UUID) (*models.User, error) {
 	user := &models.User{}
-	query := `SELECT id, username, email, password_hash, role_id, created_at, updated_at 
+	query := `SELECT id, username, email, password_hash, role_id, branch_id, created_at, updated_at 
 	          FROM users WHERE id = $1`
+	var branchID sql.NullString
 	err := r.db.QueryRow(query, id).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash,
-		&user.RoleID, &user.CreatedAt, &user.UpdatedAt,
+		&user.RoleID, &branchID, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return user, err
+	if err != nil {
+		return nil, err
+	}
+	if branchID.Valid {
+		bID, _ := uuid.Parse(branchID.String)
+		user.BranchID = &bID
+	}
+	return user, nil
 }
 
 func (r *userRepository) GetByUsername(username string) (*models.User, error) {
 	user := &models.User{}
-	query := `SELECT id, username, email, password_hash, role_id, created_at, updated_at 
+	query := `SELECT id, username, email, password_hash, role_id, branch_id, created_at, updated_at 
 	          FROM users WHERE username = $1`
+	var branchID sql.NullString
 	err := r.db.QueryRow(query, username).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash,
-		&user.RoleID, &user.CreatedAt, &user.UpdatedAt,
+		&user.RoleID, &branchID, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return user, err
+	if err != nil {
+		return nil, err
+	}
+	if branchID.Valid {
+		bID, _ := uuid.Parse(branchID.String)
+		user.BranchID = &bID
+	}
+	return user, nil
 }
 
 func (r *userRepository) GetByEmail(email string) (*models.User, error) {
@@ -100,8 +118,8 @@ func (r *userRepository) GetByEmail(email string) (*models.User, error) {
 
 func (r *userRepository) Update(user *models.User) error {
 	query := `UPDATE users SET username = $1, email = $2, password_hash = $3, 
-	          role_id = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5`
-	_, err := r.db.Exec(query, user.Username, user.Email, user.PasswordHash, user.RoleID, user.ID)
+	          role_id = $4, branch_id = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6`
+	_, err := r.db.Exec(query, user.Username, user.Email, user.PasswordHash, user.RoleID, user.BranchID, user.ID)
 	return err
 }
 
@@ -112,7 +130,7 @@ func (r *userRepository) Delete(id uuid.UUID) error {
 }
 
 func (r *userRepository) List() ([]*models.User, error) {
-	query := `SELECT id, username, email, password_hash, role_id, created_at, updated_at 
+	query := `SELECT id, username, email, password_hash, role_id, branch_id, created_at, updated_at 
 	          FROM users ORDER BY created_at DESC`
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -123,11 +141,16 @@ func (r *userRepository) List() ([]*models.User, error) {
 	var users []*models.User
 	for rows.Next() {
 		user := &models.User{}
+		var branchID sql.NullString
 		if err := rows.Scan(
 			&user.ID, &user.Username, &user.Email, &user.PasswordHash,
-			&user.RoleID, &user.CreatedAt, &user.UpdatedAt,
+			&user.RoleID, &branchID, &user.CreatedAt, &user.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if branchID.Valid {
+			bID, _ := uuid.Parse(branchID.String)
+			user.BranchID = &bID
 		}
 		users = append(users, user)
 	}
@@ -192,21 +215,30 @@ func NewStaffRepository(db *sql.DB) interfaces.StaffRepository {
 }
 
 func (r *staffRepository) Create(staff *models.Staff) error {
-	query := `INSERT INTO staff (id, name, staff_type, position_id, branch_id, coverage_area) 
-	          VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at, updated_at`
-	return r.db.QueryRow(query, staff.ID, staff.Name, staff.StaffType, staff.PositionID,
-		staff.BranchID, staff.CoverageArea).Scan(&staff.CreatedAt, &staff.UpdatedAt)
+	query := `INSERT INTO staff (id, nickname, name, staff_type, position_id, branch_id, coverage_area, area_of_operation_id, skill_level) 
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING created_at, updated_at`
+	return r.db.QueryRow(query, staff.ID, staff.Nickname, staff.Name, staff.StaffType, staff.PositionID,
+		staff.BranchID, staff.CoverageArea, staff.AreaOfOperationID, staff.SkillLevel).Scan(&staff.CreatedAt, &staff.UpdatedAt)
 }
 
 func (r *staffRepository) GetByID(id uuid.UUID) (*models.Staff, error) {
 	staff := &models.Staff{}
-	query := `SELECT id, name, staff_type, position_id, branch_id, coverage_area, created_at, updated_at 
+	query := `SELECT id, nickname, name, staff_type, position_id, branch_id, coverage_area, area_of_operation_id, skill_level, created_at, updated_at 
 	          FROM staff WHERE id = $1`
 	var branchID sql.NullString
+	var areaOfOpID sql.NullString
+	var nickname sql.NullString
 	err := r.db.QueryRow(query, id).Scan(
-		&staff.ID, &staff.Name, &staff.StaffType, &staff.PositionID,
-		&branchID, &staff.CoverageArea, &staff.CreatedAt, &staff.UpdatedAt,
+		&staff.ID, &nickname, &staff.Name, &staff.StaffType, &staff.PositionID,
+		&branchID, &staff.CoverageArea, &areaOfOpID, &staff.SkillLevel, &staff.CreatedAt, &staff.UpdatedAt,
 	)
+	if areaOfOpID.Valid {
+		aooID, _ := uuid.Parse(areaOfOpID.String)
+		staff.AreaOfOperationID = &aooID
+	}
+	if nickname.Valid {
+		staff.Nickname = nickname.String
+	}
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -221,10 +253,10 @@ func (r *staffRepository) GetByID(id uuid.UUID) (*models.Staff, error) {
 }
 
 func (r *staffRepository) Update(staff *models.Staff) error {
-	query := `UPDATE staff SET name = $1, staff_type = $2, position_id = $3, 
-	          branch_id = $4, coverage_area = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6`
-	_, err := r.db.Exec(query, staff.Name, staff.StaffType, staff.PositionID,
-		staff.BranchID, staff.CoverageArea, staff.ID)
+	query := `UPDATE staff SET nickname = $1, name = $2, staff_type = $3, position_id = $4, 
+	          branch_id = $5, coverage_area = $6, area_of_operation_id = $7, skill_level = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $9`
+	_, err := r.db.Exec(query, staff.Nickname, staff.Name, staff.StaffType, staff.PositionID,
+		staff.BranchID, staff.CoverageArea, staff.AreaOfOperationID, staff.SkillLevel, staff.ID)
 	return err
 }
 
@@ -235,28 +267,35 @@ func (r *staffRepository) Delete(id uuid.UUID) error {
 }
 
 func (r *staffRepository) List(filters interfaces.StaffFilters) ([]*models.Staff, error) {
-	query := `SELECT id, name, staff_type, position_id, branch_id, coverage_area, created_at, updated_at 
-	          FROM staff WHERE 1=1`
+	query := `SELECT s.id, s.nickname, s.name, s.staff_type, s.position_id, s.branch_id, s.coverage_area, s.area_of_operation_id, s.skill_level, s.created_at, s.updated_at 
+	          FROM staff s
+	          LEFT JOIN positions p ON s.position_id = p.id
+	          WHERE 1=1`
 	args := []interface{}{}
 	argPos := 1
 
 	if filters.StaffType != nil {
-		query += ` AND staff_type = $` + strconv.Itoa(argPos)
+		query += ` AND s.staff_type = $` + strconv.Itoa(argPos)
 		args = append(args, *filters.StaffType)
 		argPos++
 	}
 	if filters.BranchID != nil {
-		query += ` AND branch_id = $` + strconv.Itoa(argPos)
+		query += ` AND s.branch_id = $` + strconv.Itoa(argPos)
 		args = append(args, *filters.BranchID)
 		argPos++
 	}
 	if filters.PositionID != nil {
-		query += ` AND position_id = $` + strconv.Itoa(argPos)
+		query += ` AND s.position_id = $` + strconv.Itoa(argPos)
 		args = append(args, *filters.PositionID)
 		argPos++
 	}
+	if filters.AreaOfOperationID != nil {
+		query += ` AND s.area_of_operation_id = $` + strconv.Itoa(argPos)
+		args = append(args, *filters.AreaOfOperationID)
+		argPos++
+	}
 
-	query += ` ORDER BY name`
+	query += ` ORDER BY COALESCE(p.display_order, 999), s.name`
 
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
@@ -268,15 +307,24 @@ func (r *staffRepository) List(filters interfaces.StaffFilters) ([]*models.Staff
 	for rows.Next() {
 		staff := &models.Staff{}
 		var branchID sql.NullString
+		var areaOfOpID sql.NullString
+		var nickname sql.NullString
 		if err := rows.Scan(
-			&staff.ID, &staff.Name, &staff.StaffType, &staff.PositionID,
-			&branchID, &staff.CoverageArea, &staff.CreatedAt, &staff.UpdatedAt,
+			&staff.ID, &nickname, &staff.Name, &staff.StaffType, &staff.PositionID,
+			&branchID, &staff.CoverageArea, &areaOfOpID, &staff.SkillLevel, &staff.CreatedAt, &staff.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if nickname.Valid {
+			staff.Nickname = nickname.String
 		}
 		if branchID.Valid {
 			bID, _ := uuid.Parse(branchID.String)
 			staff.BranchID = &bID
+		}
+		if areaOfOpID.Valid {
+			aooID, _ := uuid.Parse(areaOfOpID.String)
+			staff.AreaOfOperationID = &aooID
 		}
 		staffList = append(staffList, staff)
 	}
@@ -304,19 +352,19 @@ func NewPositionRepository(db *sql.DB) interfaces.PositionRepository {
 }
 
 func (r *positionRepository) Create(position *models.Position) error {
-	query := `INSERT INTO positions (id, name, min_staff_per_branch, revenue_multiplier) 
-	          VALUES ($1, $2, $3, $4) RETURNING created_at`
+	query := `INSERT INTO positions (id, name, min_staff_per_branch, revenue_multiplier, display_order) 
+	          VALUES ($1, $2, $3, $4, $5) RETURNING created_at`
 	return r.db.QueryRow(query, position.ID, position.Name, position.MinStaffPerBranch,
-		position.RevenueMultiplier).Scan(&position.CreatedAt)
+		position.RevenueMultiplier, position.DisplayOrder).Scan(&position.CreatedAt)
 }
 
 func (r *positionRepository) GetByID(id uuid.UUID) (*models.Position, error) {
 	position := &models.Position{}
-	query := `SELECT id, name, min_staff_per_branch, revenue_multiplier, created_at 
+	query := `SELECT id, name, min_staff_per_branch, revenue_multiplier, display_order, created_at 
 	          FROM positions WHERE id = $1`
 	err := r.db.QueryRow(query, id).Scan(
 		&position.ID, &position.Name, &position.MinStaffPerBranch,
-		&position.RevenueMultiplier, &position.CreatedAt,
+		&position.RevenueMultiplier, &position.DisplayOrder, &position.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -326,9 +374,9 @@ func (r *positionRepository) GetByID(id uuid.UUID) (*models.Position, error) {
 
 func (r *positionRepository) Update(position *models.Position) error {
 	query := `UPDATE positions SET name = $1, min_staff_per_branch = $2, 
-	          revenue_multiplier = $3 WHERE id = $4`
+	          revenue_multiplier = $3, display_order = $4 WHERE id = $5`
 	_, err := r.db.Exec(query, position.Name, position.MinStaffPerBranch,
-		position.RevenueMultiplier, position.ID)
+		position.RevenueMultiplier, position.DisplayOrder, position.ID)
 	return err
 }
 
@@ -339,8 +387,8 @@ func (r *positionRepository) Delete(id uuid.UUID) error {
 }
 
 func (r *positionRepository) List() ([]*models.Position, error) {
-	query := `SELECT id, name, min_staff_per_branch, revenue_multiplier, created_at 
-	          FROM positions ORDER BY name`
+	query := `SELECT id, name, min_staff_per_branch, revenue_multiplier, display_order, created_at 
+	          FROM positions ORDER BY display_order, name`
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -352,7 +400,7 @@ func (r *positionRepository) List() ([]*models.Position, error) {
 		position := &models.Position{}
 		if err := rows.Scan(
 			&position.ID, &position.Name, &position.MinStaffPerBranch,
-			&position.RevenueMultiplier, &position.CreatedAt,
+			&position.RevenueMultiplier, &position.DisplayOrder, &position.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -631,15 +679,40 @@ func NewScheduleRepository(db *sql.DB) interfaces.ScheduleRepository {
 }
 
 func (r *scheduleRepository) Create(schedule *models.StaffSchedule) error {
-	query := `INSERT INTO staff_schedules (id, staff_id, branch_id, date, is_working_day, created_by) 
-	          VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at`
-	return r.db.QueryRow(query, schedule.ID, schedule.StaffID, schedule.BranchID,
-		schedule.Date, schedule.IsWorkingDay, schedule.CreatedBy).
-		Scan(&schedule.CreatedAt)
+	// Set default schedule_status if not provided
+	if schedule.ScheduleStatus == "" {
+		if schedule.IsWorkingDay {
+			schedule.ScheduleStatus = models.ScheduleStatusWorking
+		} else {
+			schedule.ScheduleStatus = models.ScheduleStatusOff
+		}
+	}
+	// Update is_working_day for backward compatibility
+	schedule.IsWorkingDay = (schedule.ScheduleStatus == models.ScheduleStatusWorking)
+	
+	// Use UPSERT (ON CONFLICT DO UPDATE) to handle both create and update
+	// If schedule already exists (staff_id, branch_id, date), update it instead of failing
+	query := `INSERT INTO staff_schedules (id, staff_id, branch_id, date, schedule_status, is_working_day, created_by) 
+	          VALUES ($1, $2, $3, $4, $5, $6, $7)
+	          ON CONFLICT (staff_id, branch_id, date) 
+	          DO UPDATE SET 
+	            schedule_status = EXCLUDED.schedule_status,
+	            is_working_day = EXCLUDED.is_working_day
+	          RETURNING id, created_at`
+	var returnedID uuid.UUID
+	err := r.db.QueryRow(query, schedule.ID, schedule.StaffID, schedule.BranchID,
+		schedule.Date, schedule.ScheduleStatus, schedule.IsWorkingDay, schedule.CreatedBy).
+		Scan(&returnedID, &schedule.CreatedAt)
+	if err != nil {
+		return err
+	}
+	// Update the schedule ID to the returned ID (existing ID if update, new ID if insert)
+	schedule.ID = returnedID
+	return nil
 }
 
 func (r *scheduleRepository) GetByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.StaffSchedule, error) {
-	query := `SELECT id, staff_id, branch_id, date, is_working_day, created_by, created_at 
+	query := `SELECT id, staff_id, branch_id, date, schedule_status, is_working_day, created_by, created_at 
 	          FROM staff_schedules WHERE branch_id = $1 AND date >= $2 AND date <= $3 ORDER BY date, staff_id`
 	rows, err := r.db.Query(query, branchID, startDate, endDate)
 	if err != nil {
@@ -650,11 +723,22 @@ func (r *scheduleRepository) GetByBranchID(branchID uuid.UUID, startDate, endDat
 	var schedules []*models.StaffSchedule
 	for rows.Next() {
 		schedule := &models.StaffSchedule{}
+		var scheduleStatus sql.NullString
 		if err := rows.Scan(
 			&schedule.ID, &schedule.StaffID, &schedule.BranchID, &schedule.Date,
-			&schedule.IsWorkingDay, &schedule.CreatedBy, &schedule.CreatedAt,
+			&scheduleStatus, &schedule.IsWorkingDay, &schedule.CreatedBy, &schedule.CreatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if scheduleStatus.Valid {
+			schedule.ScheduleStatus = models.ScheduleStatus(scheduleStatus.String)
+		} else {
+			// Fallback for old data
+			if schedule.IsWorkingDay {
+				schedule.ScheduleStatus = models.ScheduleStatusWorking
+			} else {
+				schedule.ScheduleStatus = models.ScheduleStatusOff
+			}
 		}
 		schedules = append(schedules, schedule)
 	}
@@ -662,7 +746,7 @@ func (r *scheduleRepository) GetByBranchID(branchID uuid.UUID, startDate, endDat
 }
 
 func (r *scheduleRepository) GetByStaffID(staffID uuid.UUID, startDate, endDate time.Time) ([]*models.StaffSchedule, error) {
-	query := `SELECT id, staff_id, branch_id, date, is_working_day, created_by, created_at 
+	query := `SELECT id, staff_id, branch_id, date, schedule_status, is_working_day, created_by, created_at 
 	          FROM staff_schedules WHERE staff_id = $1 AND date >= $2 AND date <= $3 ORDER BY date`
 	rows, err := r.db.Query(query, staffID, startDate, endDate)
 	if err != nil {
@@ -673,11 +757,22 @@ func (r *scheduleRepository) GetByStaffID(staffID uuid.UUID, startDate, endDate 
 	var schedules []*models.StaffSchedule
 	for rows.Next() {
 		schedule := &models.StaffSchedule{}
+		var scheduleStatus sql.NullString
 		if err := rows.Scan(
 			&schedule.ID, &schedule.StaffID, &schedule.BranchID, &schedule.Date,
-			&schedule.IsWorkingDay, &schedule.CreatedBy, &schedule.CreatedAt,
+			&scheduleStatus, &schedule.IsWorkingDay, &schedule.CreatedBy, &schedule.CreatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if scheduleStatus.Valid {
+			schedule.ScheduleStatus = models.ScheduleStatus(scheduleStatus.String)
+		} else {
+			// Fallback for old data
+			if schedule.IsWorkingDay {
+				schedule.ScheduleStatus = models.ScheduleStatusWorking
+			} else {
+				schedule.ScheduleStatus = models.ScheduleStatusOff
+			}
 		}
 		schedules = append(schedules, schedule)
 	}
@@ -685,14 +780,31 @@ func (r *scheduleRepository) GetByStaffID(staffID uuid.UUID, startDate, endDate 
 }
 
 func (r *scheduleRepository) Update(schedule *models.StaffSchedule) error {
-	query := `UPDATE staff_schedules SET is_working_day = $1 WHERE id = $2`
-	_, err := r.db.Exec(query, schedule.IsWorkingDay, schedule.ID)
+	// Set default schedule_status if not provided
+	if schedule.ScheduleStatus == "" {
+		if schedule.IsWorkingDay {
+			schedule.ScheduleStatus = models.ScheduleStatusWorking
+		} else {
+			schedule.ScheduleStatus = models.ScheduleStatusOff
+		}
+	}
+	// Update is_working_day for backward compatibility
+	schedule.IsWorkingDay = (schedule.ScheduleStatus == models.ScheduleStatusWorking)
+	
+	query := `UPDATE staff_schedules SET schedule_status = $1, is_working_day = $2 WHERE id = $3`
+	_, err := r.db.Exec(query, schedule.ScheduleStatus, schedule.IsWorkingDay, schedule.ID)
 	return err
 }
 
 func (r *scheduleRepository) Delete(id uuid.UUID) error {
 	query := `DELETE FROM staff_schedules WHERE id = $1`
 	_, err := r.db.Exec(query, id)
+	return err
+}
+
+func (r *scheduleRepository) DeleteByStaffID(staffID uuid.UUID) error {
+	query := `DELETE FROM staff_schedules WHERE staff_id = $1`
+	_, err := r.db.Exec(query, staffID)
 	return err
 }
 
@@ -791,6 +903,12 @@ func (r *rotationRepository) GetByRotationStaffID(rotationStaffID uuid.UUID, sta
 func (r *rotationRepository) Delete(id uuid.UUID) error {
 	query := `DELETE FROM rotation_assignments WHERE id = $1`
 	_, err := r.db.Exec(query, id)
+	return err
+}
+
+func (r *rotationRepository) DeleteByRotationStaffID(rotationStaffID uuid.UUID) error {
+	query := `DELETE FROM rotation_assignments WHERE rotation_staff_id = $1`
+	_, err := r.db.Exec(query, rotationStaffID)
 	return err
 }
 
@@ -951,5 +1069,93 @@ func (r *allocationRuleRepository) List() ([]*models.StaffAllocationRule, error)
 		rules = append(rules, rule)
 	}
 	return rules, rows.Err()
+}
+
+// AreaOfOperationRepository implementation
+type areaOfOperationRepository struct {
+	db *sql.DB
+}
+
+func NewAreaOfOperationRepository(db *sql.DB) interfaces.AreaOfOperationRepository {
+	return &areaOfOperationRepository{db: db}
+}
+
+func (r *areaOfOperationRepository) Create(aoo *models.AreaOfOperation) error {
+	query := `INSERT INTO areas_of_operation (id, name, code, description, is_active) 
+	          VALUES ($1, $2, $3, $4, $5) RETURNING created_at, updated_at`
+	return r.db.QueryRow(query, aoo.ID, aoo.Name, aoo.Code, aoo.Description, aoo.IsActive).
+		Scan(&aoo.CreatedAt, &aoo.UpdatedAt)
+}
+
+func (r *areaOfOperationRepository) GetByID(id uuid.UUID) (*models.AreaOfOperation, error) {
+	query := `SELECT id, name, code, description, is_active, created_at, updated_at 
+	          FROM areas_of_operation WHERE id = $1`
+	aoo := &models.AreaOfOperation{}
+	err := r.db.QueryRow(query, id).Scan(
+		&aoo.ID, &aoo.Name, &aoo.Code, &aoo.Description, &aoo.IsActive,
+		&aoo.CreatedAt, &aoo.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return aoo, nil
+}
+
+func (r *areaOfOperationRepository) GetByCode(code string) (*models.AreaOfOperation, error) {
+	query := `SELECT id, name, code, description, is_active, created_at, updated_at 
+	          FROM areas_of_operation WHERE code = $1`
+	aoo := &models.AreaOfOperation{}
+	err := r.db.QueryRow(query, code).Scan(
+		&aoo.ID, &aoo.Name, &aoo.Code, &aoo.Description, &aoo.IsActive,
+		&aoo.CreatedAt, &aoo.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return aoo, nil
+}
+
+func (r *areaOfOperationRepository) Update(aoo *models.AreaOfOperation) error {
+	query := `UPDATE areas_of_operation 
+	          SET name = $1, code = $2, description = $3, is_active = $4, updated_at = CURRENT_TIMESTAMP 
+	          WHERE id = $5 RETURNING updated_at`
+	return r.db.QueryRow(query, aoo.Name, aoo.Code, aoo.Description, aoo.IsActive, aoo.ID).
+		Scan(&aoo.UpdatedAt)
+}
+
+func (r *areaOfOperationRepository) Delete(id uuid.UUID) error {
+	query := `DELETE FROM areas_of_operation WHERE id = $1`
+	_, err := r.db.Exec(query, id)
+	return err
+}
+
+func (r *areaOfOperationRepository) List(includeInactive bool) ([]*models.AreaOfOperation, error) {
+	var query string
+	if includeInactive {
+		query = `SELECT id, name, code, description, is_active, created_at, updated_at 
+		         FROM areas_of_operation ORDER BY name`
+	} else {
+		query = `SELECT id, name, code, description, is_active, created_at, updated_at 
+		         FROM areas_of_operation WHERE is_active = true ORDER BY name`
+	}
+	
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var areas []*models.AreaOfOperation
+	for rows.Next() {
+		aoo := &models.AreaOfOperation{}
+		if err := rows.Scan(
+			&aoo.ID, &aoo.Name, &aoo.Code, &aoo.Description, &aoo.IsActive,
+			&aoo.CreatedAt, &aoo.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		areas = append(areas, aoo)
+	}
+	return areas, rows.Err()
 }
 
