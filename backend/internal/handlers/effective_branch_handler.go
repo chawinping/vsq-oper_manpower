@@ -18,9 +18,12 @@ func NewEffectiveBranchHandler(repos *postgres.Repositories) *EffectiveBranchHan
 }
 
 type CreateEffectiveBranchRequest struct {
-	RotationStaffID uuid.UUID `json:"rotation_staff_id" binding:"required"`
-	BranchID        uuid.UUID `json:"branch_id" binding:"required"`
-	Level           int       `json:"level" binding:"required,oneof=1 2"`
+	RotationStaffID        uuid.UUID `json:"rotation_staff_id" binding:"required"`
+	BranchID               uuid.UUID `json:"branch_id" binding:"required"`
+	Level                  int       `json:"level" binding:"required,oneof=1 2"`
+	CommuteDurationMinutes *int      `json:"commute_duration_minutes,omitempty"`
+	TransitCount           *int      `json:"transit_count,omitempty"`
+	TravelCost             *float64  `json:"travel_cost,omitempty"`
 }
 
 // GetByRotationStaffID returns all effective branches for a rotation staff member
@@ -57,12 +60,15 @@ func (h *EffectiveBranchHandler) GetByRotationStaffID(c *gin.Context) {
 
 	// Load branch details for each effective branch
 	type EffectiveBranchResponse struct {
-		ID            uuid.UUID `json:"id"`
-		RotationStaffID uuid.UUID `json:"rotation_staff_id"`
-		BranchID      uuid.UUID `json:"branch_id"`
-		Branch        *models.Branch `json:"branch"`
-		Level         int       `json:"level"`
-		CreatedAt     string    `json:"created_at"`
+		ID                    uuid.UUID     `json:"id"`
+		RotationStaffID       uuid.UUID     `json:"rotation_staff_id"`
+		BranchID              uuid.UUID     `json:"branch_id"`
+		Branch                *models.Branch `json:"branch"`
+		Level                 int            `json:"level"`
+		CommuteDurationMinutes *int          `json:"commute_duration_minutes,omitempty"`
+		TransitCount          *int          `json:"transit_count,omitempty"`
+		TravelCost            *float64      `json:"travel_cost,omitempty"`
+		CreatedAt             string         `json:"created_at"`
 	}
 
 	response := make([]EffectiveBranchResponse, 0)
@@ -73,12 +79,15 @@ func (h *EffectiveBranchHandler) GetByRotationStaffID(c *gin.Context) {
 		}
 
 		response = append(response, EffectiveBranchResponse{
-			ID:              eb.ID,
-			RotationStaffID: eb.RotationStaffID,
-			BranchID:        eb.BranchID,
-			Branch:          branch,
-			Level:           eb.Level,
-			CreatedAt:       eb.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			ID:                    eb.ID,
+			RotationStaffID:       eb.RotationStaffID,
+			BranchID:              eb.BranchID,
+			Branch:                branch,
+			Level:                 eb.Level,
+			CommuteDurationMinutes: eb.CommuteDurationMinutes,
+			TransitCount:          eb.TransitCount,
+			TravelCost:            eb.TravelCost,
+			CreatedAt:             eb.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		})
 	}
 
@@ -124,10 +133,13 @@ func (h *EffectiveBranchHandler) Create(c *gin.Context) {
 	}
 
 	effectiveBranch := &models.EffectiveBranch{
-		ID:              uuid.New(),
-		RotationStaffID: req.RotationStaffID,
-		BranchID:        req.BranchID,
-		Level:           req.Level,
+		ID:                    uuid.New(),
+		RotationStaffID:       req.RotationStaffID,
+		BranchID:              req.BranchID,
+		Level:                 req.Level,
+		CommuteDurationMinutes: req.CommuteDurationMinutes,
+		TransitCount:          req.TransitCount,
+		TravelCost:            req.TravelCost,
 	}
 
 	if err := h.repos.EffectiveBranch.Create(effectiveBranch); err != nil {
@@ -140,6 +152,62 @@ func (h *EffectiveBranchHandler) Create(c *gin.Context) {
 	effectiveBranch.Branch = branch
 
 	c.JSON(http.StatusCreated, gin.H{"effective_branch": effectiveBranch})
+}
+
+type UpdateEffectiveBranchRequest struct {
+	BranchID               uuid.UUID `json:"branch_id" binding:"required"`
+	Level                  int       `json:"level" binding:"required,oneof=1 2"`
+	CommuteDurationMinutes *int     `json:"commute_duration_minutes,omitempty"`
+	TransitCount           *int     `json:"transit_count,omitempty"`
+	TravelCost             *float64  `json:"travel_cost,omitempty"`
+}
+
+// Update updates an existing effective branch assignment
+func (h *EffectiveBranchHandler) Update(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req UpdateEffectiveBranchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get existing effective branch
+	existingEB, err := h.repos.EffectiveBranch.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Effective branch not found"})
+		return
+	}
+
+	// Verify branch exists
+	_, err = h.repos.Branch.GetByID(req.BranchID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Branch not found"})
+		return
+	}
+
+	// Update the effective branch
+	existingEB.BranchID = req.BranchID
+	existingEB.Level = req.Level
+	existingEB.CommuteDurationMinutes = req.CommuteDurationMinutes
+	existingEB.TransitCount = req.TransitCount
+	existingEB.TravelCost = req.TravelCost
+
+	if err := h.repos.EffectiveBranch.Update(existingEB); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Load branch details
+	branch, _ := h.repos.Branch.GetByID(req.BranchID)
+	existingEB.Branch = branch
+
+	c.JSON(http.StatusOK, gin.H{"effective_branch": existingEB})
 }
 
 // Delete removes an effective branch assignment
@@ -164,8 +232,11 @@ func (h *EffectiveBranchHandler) Delete(c *gin.Context) {
 type BulkUpdateEffectiveBranchesRequest struct {
 	RotationStaffID uuid.UUID `json:"rotation_staff_id" binding:"required"`
 	EffectiveBranches []struct {
-		BranchID uuid.UUID `json:"branch_id" binding:"required"`
-		Level    int      `json:"level" binding:"required,oneof=1 2"`
+		BranchID              uuid.UUID `json:"branch_id" binding:"required"`
+		Level                 int       `json:"level" binding:"required,oneof=1 2"`
+		CommuteDurationMinutes *int     `json:"commute_duration_minutes,omitempty"`
+		TransitCount          *int      `json:"transit_count,omitempty"`
+		TravelCost            *float64  `json:"travel_cost,omitempty"`
 	} `json:"effective_branches" binding:"required"`
 }
 
@@ -207,10 +278,13 @@ func (h *EffectiveBranchHandler) BulkUpdate(c *gin.Context) {
 	created := make([]*models.EffectiveBranch, 0)
 	for _, eb := range req.EffectiveBranches {
 		effectiveBranch := &models.EffectiveBranch{
-			ID:              uuid.New(),
-			RotationStaffID: req.RotationStaffID,
-			BranchID:        eb.BranchID,
-			Level:           eb.Level,
+			ID:                    uuid.New(),
+			RotationStaffID:       req.RotationStaffID,
+			BranchID:              eb.BranchID,
+			Level:                 eb.Level,
+			CommuteDurationMinutes: eb.CommuteDurationMinutes,
+			TransitCount:          eb.TransitCount,
+			TravelCost:            eb.TravelCost,
 		}
 
 		if err := h.repos.EffectiveBranch.Create(effectiveBranch); err != nil {

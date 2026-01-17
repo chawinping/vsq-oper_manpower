@@ -136,4 +136,159 @@ func (h *AreaOfOperationHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Area of operation deleted successfully"})
 }
 
+func (h *AreaOfOperationHandler) AddZone(c *gin.Context) {
+	idStr := c.Param("id")
+	areaID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
+		return
+	}
+
+	zoneIDStr := c.Query("zone_id")
+	if zoneIDStr == "" {
+		var req struct {
+			ZoneID uuid.UUID `json:"zone_id" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		zoneIDStr = req.ZoneID.String()
+	}
+
+	zoneID, err := uuid.Parse(zoneIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid zone ID"})
+		return
+	}
+
+	if err := h.repos.AreaOfOperation.AddZone(areaID, zoneID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Zone added to area of operation successfully"})
+}
+
+func (h *AreaOfOperationHandler) RemoveZone(c *gin.Context) {
+	idStr := c.Param("id")
+	areaID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
+		return
+	}
+
+	zoneIDStr := c.Param("zoneId")
+	zoneID, err := uuid.Parse(zoneIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid zone ID"})
+		return
+	}
+
+	if err := h.repos.AreaOfOperation.RemoveZone(areaID, zoneID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Zone removed from area of operation successfully"})
+}
+
+func (h *AreaOfOperationHandler) GetZones(c *gin.Context) {
+	idStr := c.Param("id")
+	areaID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
+		return
+	}
+
+	zones, err := h.repos.AreaOfOperation.GetZones(areaID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"zones": zones})
+}
+
+func (h *AreaOfOperationHandler) AddBranch(c *gin.Context) {
+	idStr := c.Param("id")
+	areaID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
+		return
+	}
+
+	var req struct {
+		BranchID uuid.UUID `json:"branch_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.repos.AreaOfOperation.AddBranch(areaID, req.BranchID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Branch added to area of operation successfully"})
+}
+
+func (h *AreaOfOperationHandler) RemoveBranch(c *gin.Context) {
+	idStr := c.Param("id")
+	areaID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
+		return
+	}
+
+	branchIDStr := c.Param("branchId")
+	branchID, err := uuid.Parse(branchIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid branch ID"})
+		return
+	}
+
+	if err := h.repos.AreaOfOperation.RemoveBranch(areaID, branchID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Branch removed from area of operation successfully"})
+}
+
+func (h *AreaOfOperationHandler) GetBranches(c *gin.Context) {
+	idStr := c.Param("id")
+	areaID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
+		return
+	}
+
+	branches, err := h.repos.AreaOfOperation.GetBranches(areaID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"branches": branches})
+}
+
+func (h *AreaOfOperationHandler) GetAllBranches(c *gin.Context) {
+	idStr := c.Param("id")
+	areaID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid area ID"})
+		return
+	}
+
+	branches, err := h.repos.AreaOfOperation.GetAllBranches(areaID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"branches": branches})
+}
+
 

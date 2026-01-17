@@ -137,7 +137,8 @@ export default function UsersManagementPage() {
   }
 
   return (
-    <div className="p-6">
+    <>
+      <div className="p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-neutral-text-primary mb-2">User Management</h1>
           <p className="text-sm text-neutral-text-secondary">Manage system users and their roles</p>
@@ -301,7 +302,7 @@ export default function UsersManagementPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

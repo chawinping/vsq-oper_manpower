@@ -5,7 +5,6 @@ import { useUser } from '@/contexts/UserContext';
 import { staffApi, Staff, CreateStaffRequest } from '@/lib/api/staff';
 import { positionApi, Position } from '@/lib/api/position';
 import { branchApi, Branch } from '@/lib/api/branch';
-import { effectiveBranchApi, EffectiveBranch } from '@/lib/api/effectiveBranch';
 
 export default function StaffManagementPage() {
   const { user } = useUser();
@@ -30,8 +29,6 @@ export default function StaffManagementPage() {
     coverage_area: '',
     skill_level: 5,
   });
-  const [effectiveBranches, setEffectiveBranches] = useState<{ branch_id: string; level: number }[]>([]);
-  const [loadingEffectiveBranches, setLoadingEffectiveBranches] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -106,19 +103,7 @@ export default function StaffManagementPage() {
         staffId = createdStaff.id;
       }
 
-      // Save effective branches if this is rotation staff
-      if (formData.staff_type === 'rotation') {
-        try {
-          // Always use bulk update - it will replace all existing effective branches
-          await effectiveBranchApi.bulkUpdate({
-            rotation_staff_id: staffId,
-            effective_branches: effectiveBranches,
-          });
-        } catch (error: any) {
-          console.error('Failed to save effective branches:', error);
-          alert('Staff saved but failed to save effective branches: ' + (error.response?.data?.error || error.message));
-        }
-      }
+      // Note: Zone and effective branches for rotation staff should be set in Rotation Staff Profile
 
       setShowModal(false);
       setEditingStaff(null);
@@ -131,7 +116,6 @@ export default function StaffManagementPage() {
         coverage_area: '',
         skill_level: 5,
       });
-      setEffectiveBranches([]);
       await loadStaff();
     } catch (error: any) {
       alert(error.response?.data?.error || 'Failed to save staff');
@@ -149,22 +133,6 @@ export default function StaffManagementPage() {
       coverage_area: staffMember.coverage_area || '',
       skill_level: staffMember.skill_level || 5,
     });
-    
-    // Load effective branches if this is rotation staff
-    if (staffMember.staff_type === 'rotation') {
-      setLoadingEffectiveBranches(true);
-      try {
-        const ebs = await effectiveBranchApi.getByRotationStaffID(staffMember.id);
-        setEffectiveBranches(ebs.map(eb => ({ branch_id: eb.branch_id, level: eb.level })));
-      } catch (error) {
-        console.error('Failed to load effective branches:', error);
-        setEffectiveBranches([]);
-      } finally {
-        setLoadingEffectiveBranches(false);
-      }
-    } else {
-      setEffectiveBranches([]);
-    }
     
     setShowModal(true);
   };
@@ -300,17 +268,16 @@ export default function StaffManagementPage() {
                     <button
                     onClick={() => {
                       setEditingStaff(null);
-                      setFormData({
-                        nickname: '',
-                        name: '',
-                        staff_type: 'branch',
-                        position_id: '',
-                        branch_id: '',
-                        coverage_area: '',
-                        skill_level: 5,
-                      });
-                      setEffectiveBranches([]);
-                      setShowModal(true);
+      setFormData({
+        nickname: '',
+        name: '',
+        staff_type: 'branch',
+        position_id: '',
+        branch_id: '',
+        coverage_area: '',
+        skill_level: 5,
+      });
+      setShowModal(true);
                     }}
                       className="btn-primary"
                     >
@@ -339,6 +306,7 @@ export default function StaffManagementPage() {
                   <th>Type</th>
                   <th>Position</th>
                   <th>Branch</th>
+                  <th>Zone / Branches</th>
                   <th>Coverage Area</th>
                   <th>Skill Level</th>
                   {(canManage || isBranchManager) && <th>Actions</th>}
@@ -348,6 +316,8 @@ export default function StaffManagementPage() {
                 {(staff || []).map((staffMember) => {
                   const position = (positions || []).find((p) => p.id === staffMember.position_id);
                   const branch = (branches || []).find((b) => b.id === staffMember.branch_id);
+                  const zone = (staffMember as any).zone;
+                  const staffBranches = (staffMember as any).branches || [];
                   return (
                     <tr key={staffMember.id}>
                       <td className="font-medium">{staffMember.nickname || '-'}</td>
@@ -363,6 +333,19 @@ export default function StaffManagementPage() {
                       </td>
                       <td>{position?.name || '-'}</td>
                       <td>{branch?.name || '-'}</td>
+                      <td>
+                        {zone ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            Zone: {zone.name} ({zone.code})
+                          </span>
+                        ) : staffBranches.length > 0 ? (
+                          <span className="text-xs text-neutral-text-secondary">
+                            {staffBranches.length} branch(es)
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
                       <td>{staffMember.coverage_area || '-'}</td>
                       <td>
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -372,7 +355,7 @@ export default function StaffManagementPage() {
                       {(canManage || isBranchManager) && (
                         <td>
                           <div className="flex gap-3">
-                            {/* Branch managers can only edit branch staff */}
+                            {/* Branch managers can edit branch staff, admins/area/district managers can edit all */}
                             {(canManage || (isBranchManager && staffMember.staff_type === 'branch')) && (
                               <button
                                 onClick={() => handleEdit(staffMember)}
@@ -409,14 +392,14 @@ export default function StaffManagementPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="card max-w-md w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="card max-w-md w-full my-8">
             <div className="p-6">
               <h2 className="text-xl font-semibold text-neutral-text-primary mb-6">
                 {editingStaff ? 'Edit Staff' : 'Add Staff'}
               </h2>
               <form onSubmit={handleSubmit}>
-                <div className="space-y-4">
+                <div className="space-y-4 max-h-[calc(100vh-250px)] overflow-y-auto pr-2">
                   <div>
                     <label className="block text-sm font-medium text-neutral-text-primary mb-1.5">
                       Nickname
@@ -467,22 +450,6 @@ export default function StaffManagementPage() {
                       onChange={(e) => {
                         const newType = e.target.value as 'branch' | 'rotation';
                         setFormData({ ...formData, staff_type: newType });
-                        // Clear effective branches when switching away from rotation
-                        if (newType !== 'rotation') {
-                          setEffectiveBranches([]);
-                        } else if (editingStaff && editingStaff.staff_type === 'rotation') {
-                          // Load effective branches when switching to rotation for existing rotation staff
-                          setLoadingEffectiveBranches(true);
-                          effectiveBranchApi.getByRotationStaffID(editingStaff.id)
-                            .then(ebs => {
-                              setEffectiveBranches(ebs.map(eb => ({ branch_id: eb.branch_id, level: eb.level })));
-                              setLoadingEffectiveBranches(false);
-                            })
-                            .catch(() => {
-                              setEffectiveBranches([]);
-                              setLoadingEffectiveBranches(false);
-                            });
-                        }
                       }}
                       className="input-field"
                       disabled={isBranchManager}
@@ -543,82 +510,21 @@ export default function StaffManagementPage() {
                     </div>
                   )}
                   {formData.staff_type === 'rotation' && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-neutral-text-primary mb-1.5">
-                          Coverage Area
-                        </label>
-                        <input
-                          type="text"
-                          value={formData.coverage_area}
-                          onChange={(e) => setFormData({ ...formData, coverage_area: e.target.value })}
-                          className="input-field"
-                          placeholder="e.g., Area A"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-neutral-text-primary mb-1.5">
-                          Effective Branches *
-                        </label>
-                        <p className="text-xs text-neutral-text-secondary mb-2">
-                          Select branches this rotation staff can support. Level 1 = Priority, Level 2 = Reserved.
-                        </p>
-                        {loadingEffectiveBranches ? (
-                          <div className="text-sm text-neutral-text-secondary">Loading...</div>
-                        ) : (
-                          <div className="space-y-2 max-h-64 overflow-y-auto border border-neutral-border rounded-md p-3">
-                            {branches.map((branch) => {
-                              const existingEB = effectiveBranches.find(eb => eb.branch_id === branch.id);
-                              return (
-                                <div key={branch.id} className="flex items-center gap-3">
-                                  <input
-                                    type="checkbox"
-                                    id={`branch-${branch.id}`}
-                                    checked={!!existingEB}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setEffectiveBranches([...effectiveBranches, { branch_id: branch.id, level: 1 }]);
-                                      } else {
-                                        setEffectiveBranches(effectiveBranches.filter(eb => eb.branch_id !== branch.id));
-                                      }
-                                    }}
-                                    className="w-4 h-4"
-                                  />
-                                  <label htmlFor={`branch-${branch.id}`} className="flex-1 cursor-pointer">
-                                    <span className="font-medium">{branch.name}</span>
-                                    <span className="text-xs text-neutral-text-secondary ml-2">({branch.code})</span>
-                                  </label>
-                                  {existingEB && (
-                                    <select
-                                      value={existingEB.level}
-                                      onChange={(e) => {
-                                        setEffectiveBranches(
-                                          effectiveBranches.map(eb =>
-                                            eb.branch_id === branch.id
-                                              ? { ...eb, level: parseInt(e.target.value) }
-                                              : eb
-                                          )
-                                        );
-                                      }}
-                                      className="text-xs border border-neutral-border rounded px-2 py-1"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <option value={1}>Level 1 (Priority)</option>
-                                      <option value={2}>Level 2 (Reserved)</option>
-                                    </select>
-                                  )}
-                                </div>
-                              );
-                            })}
-                            {effectiveBranches.length === 0 && (
-                              <div className="text-sm text-neutral-text-secondary text-center py-2">
-                                No branches selected. Select at least one branch.
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </>
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-text-primary mb-1.5">
+                        Coverage Area (Legacy)
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.coverage_area}
+                        onChange={(e) => setFormData({ ...formData, coverage_area: e.target.value })}
+                        className="input-field"
+                        placeholder="e.g., Area A (legacy field)"
+                      />
+                      <p className="mt-1 text-xs text-neutral-text-secondary">
+                        Legacy field - zone and branches can be set in Rotation Staff Profile
+                      </p>
+                    </div>
                   )}
                 </div>
                 <div className="mt-6 flex justify-end gap-2">
@@ -627,7 +533,6 @@ export default function StaffManagementPage() {
                     onClick={() => {
                       setShowModal(false);
                       setEditingStaff(null);
-                      setEffectiveBranches([]);
                     }}
                     className="btn-secondary"
                   >

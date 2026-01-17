@@ -24,18 +24,22 @@ func NewStaffHandler(repos *postgres.Repositories) *StaffHandler {
 		excelImporter: excel.NewExcelImporter(
 			repos.Position,
 			repos.Branch,
+			repos.Doctor,
 		),
 	}
 }
 
 type CreateStaffRequest struct {
-	Nickname     string    `json:"nickname"`
-	Name         string    `json:"name" binding:"required"`
-	StaffType    string    `json:"staff_type" binding:"required"`
-	PositionID   uuid.UUID `json:"position_id" binding:"required"`
-	BranchID     *uuid.UUID `json:"branch_id,omitempty"`
-	CoverageArea string    `json:"coverage_area"`
-	SkillLevel   int       `json:"skill_level" binding:"min=0,max=10"`
+	Nickname          string      `json:"nickname"`
+	Name              string      `json:"name" binding:"required"`
+	StaffType         string      `json:"staff_type" binding:"required"`
+	PositionID        uuid.UUID   `json:"position_id" binding:"required"`
+	BranchID          *uuid.UUID  `json:"branch_id,omitempty"`
+	CoverageArea      string      `json:"coverage_area"`
+	AreaOfOperationID *uuid.UUID  `json:"area_of_operation_id,omitempty"` // Legacy field
+	ZoneID            *uuid.UUID  `json:"zone_id,omitempty"`              // Zone assignment for rotation staff
+	BranchIDs         []uuid.UUID `json:"branch_ids,omitempty"`           // Individual branches for rotation staff
+	SkillLevel        int         `json:"skill_level" binding:"min=0,max=10"`
 }
 
 func (h *StaffHandler) List(c *gin.Context) {
@@ -122,19 +126,29 @@ func (h *StaffHandler) Create(c *gin.Context) {
 	}
 
 	staff := &models.Staff{
-		ID:           uuid.New(),
-		Nickname:     req.Nickname,
-		Name:         req.Name,
-		StaffType:    models.StaffType(req.StaffType),
-		PositionID:   req.PositionID,
-		BranchID:     req.BranchID,
-		CoverageArea: req.CoverageArea,
-		SkillLevel:   skillLevel,
+		ID:                uuid.New(),
+		Nickname:          req.Nickname,
+		Name:              req.Name,
+		StaffType:         models.StaffType(req.StaffType),
+		PositionID:        req.PositionID,
+		BranchID:          req.BranchID,
+		CoverageArea:      req.CoverageArea,
+		AreaOfOperationID: req.AreaOfOperationID,
+		ZoneID:            req.ZoneID,
+		SkillLevel:        skillLevel,
 	}
 
 	if err := h.repos.Staff.Create(staff); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Save individual branches if this is rotation staff
+	if models.StaffType(req.StaffType) == models.StaffTypeRotation && len(req.BranchIDs) > 0 {
+		if err := h.repos.Staff.BulkUpdateBranches(staff.ID, req.BranchIDs); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to save branches: %v", err)})
+			return
+		}
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"staff": staff})
@@ -200,19 +214,33 @@ func (h *StaffHandler) Update(c *gin.Context) {
 	}
 
 	staff := &models.Staff{
-		ID:           id,
-		Nickname:     req.Nickname,
-		Name:         req.Name,
-		StaffType:    models.StaffType(req.StaffType),
-		PositionID:   req.PositionID,
-		BranchID:     req.BranchID,
-		CoverageArea: req.CoverageArea,
-		SkillLevel:   skillLevel,
+		ID:                id,
+		Nickname:          req.Nickname,
+		Name:              req.Name,
+		StaffType:         models.StaffType(req.StaffType),
+		PositionID:        req.PositionID,
+		BranchID:          req.BranchID,
+		CoverageArea:      req.CoverageArea,
+		AreaOfOperationID: req.AreaOfOperationID,
+		ZoneID:            req.ZoneID,
+		SkillLevel:        skillLevel,
 	}
 
 	if err := h.repos.Staff.Update(staff); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Update individual branches if this is rotation staff
+	if models.StaffType(req.StaffType) == models.StaffTypeRotation {
+		branchIDs := req.BranchIDs
+		if branchIDs == nil {
+			branchIDs = []uuid.UUID{} // Empty array if not provided
+		}
+		if err := h.repos.Staff.BulkUpdateBranches(id, branchIDs); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to update branches: %v", err)})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"staff": staff})

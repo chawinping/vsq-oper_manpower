@@ -20,12 +20,10 @@ func NewBranchHandler(repos *postgres.Repositories) *BranchHandler {
 }
 
 type CreateBranchRequest struct {
-	Name            string     `json:"name" binding:"required"`
-	Code            string     `json:"code" binding:"required"`
-	Address         string     `json:"address"`
-	AreaManagerID   *uuid.UUID `json:"area_manager_id,omitempty"`
-	ExpectedRevenue float64    `json:"expected_revenue"`
-	Priority        int        `json:"priority"`
+	Name          string     `json:"name" binding:"required"`
+	Code          string     `json:"code" binding:"required"`
+	AreaManagerID *uuid.UUID `json:"area_manager_id,omitempty"`
+	Priority      int        `json:"priority"`
 }
 
 func (h *BranchHandler) List(c *gin.Context) {
@@ -46,13 +44,11 @@ func (h *BranchHandler) Create(c *gin.Context) {
 	}
 
 	branch := &models.Branch{
-		ID:              uuid.New(),
-		Name:            req.Name,
-		Code:            req.Code,
-		Address:         req.Address,
-		AreaManagerID:   req.AreaManagerID,
-		ExpectedRevenue: req.ExpectedRevenue,
-		Priority:        req.Priority,
+		ID:            uuid.New(),
+		Name:          req.Name,
+		Code:          req.Code,
+		AreaManagerID: req.AreaManagerID,
+		Priority:      req.Priority,
 	}
 
 	if err := h.repos.Branch.Create(branch); err != nil {
@@ -95,13 +91,11 @@ func (h *BranchHandler) Update(c *gin.Context) {
 	}
 
 	branch := &models.Branch{
-		ID:              id,
-		Name:            req.Name,
-		Code:            req.Code,
-		Address:         req.Address,
-		AreaManagerID:   req.AreaManagerID,
-		ExpectedRevenue: req.ExpectedRevenue,
-		Priority:        req.Priority,
+		ID:            id,
+		Name:          req.Name,
+		Code:          req.Code,
+		AreaManagerID: req.AreaManagerID,
+		Priority:      req.Priority,
 	}
 
 	if err := h.repos.Branch.Update(branch); err != nil {

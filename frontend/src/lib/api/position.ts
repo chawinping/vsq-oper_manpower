@@ -3,17 +3,19 @@ import apiClient from './client';
 export interface Position {
   id: string;
   name: string;
-  min_staff_per_branch: number;
-  revenue_multiplier: number;
+  position_type: 'branch' | 'rotation';
+  manpower_type: 'พนักงานฟร้อนท์' | 'ผู้ช่วยแพทย์' | 'อื่นๆ' | 'ทำความสะอาด';
   display_order: number;
+  branch_staff_count?: number;   // Read-only field showing number of branch staff allocated to this position
+  rotation_staff_count?: number;  // Read-only field showing number of rotation staff allocated to this position
   created_at: string;
 }
 
 export interface UpdatePositionRequest {
   name: string;
-  min_staff_per_branch: number;
-  revenue_multiplier: number;
   display_order: number;
+  position_type: 'branch' | 'rotation';
+  manpower_type: 'พนักงานฟร้อนท์' | 'ผู้ช่วยแพทย์' | 'อื่นๆ' | 'ทำความสะอาด';
 }
 
 export const positionApi = {

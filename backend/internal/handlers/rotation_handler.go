@@ -12,15 +12,21 @@ import (
 	"vsq-oper-manpower/backend/internal/domain/interfaces"
 	"vsq-oper-manpower/backend/internal/domain/models"
 	"vsq-oper-manpower/backend/internal/repositories/postgres"
+	"vsq-oper-manpower/backend/internal/usecases/allocation"
 )
 
 type RotationHandler struct {
-	repos *postgres.Repositories
-	cfg   *config.Config
+	repos            *postgres.Repositories
+	cfg              *config.Config
+	suggestionEngine *allocation.SuggestionEngine
 }
 
-func NewRotationHandler(repos *postgres.Repositories, cfg *config.Config) *RotationHandler {
-	return &RotationHandler{repos: repos, cfg: cfg}
+func NewRotationHandler(repos *postgres.Repositories, cfg *config.Config, suggestionEngine *allocation.SuggestionEngine) *RotationHandler {
+	return &RotationHandler{
+		repos:            repos,
+		cfg:              cfg,
+		suggestionEngine: suggestionEngine,
+	}
 }
 
 type AssignRotationRequest struct {
@@ -28,6 +34,8 @@ type AssignRotationRequest struct {
 	BranchID        uuid.UUID `json:"branch_id" binding:"required"`
 	Date            string    `json:"date" binding:"required"`
 	AssignmentLevel int       `json:"assignment_level" binding:"required"`
+	IsAdhoc         bool      `json:"is_adhoc"`
+	AdhocReason     string    `json:"adhoc_reason"`
 }
 
 func (h *RotationHandler) GetAssignments(c *gin.Context) {
@@ -111,6 +119,8 @@ func (h *RotationHandler) Assign(c *gin.Context) {
 		BranchID:        req.BranchID,
 		Date:            date,
 		AssignmentLevel: req.AssignmentLevel,
+		IsAdhoc:         req.IsAdhoc,
+		AdhocReason:     req.AdhocReason,
 		AssignedBy:      userID,
 	}
 
@@ -171,7 +181,7 @@ func (h *RotationHandler) GetSuggestions(c *gin.Context) {
 	}
 
 	// Get branches to suggest for
-	var branches []*models.Branch
+	var branchIDs []uuid.UUID
 	if branchIDStr != "" {
 		branchID, err := uuid.Parse(branchIDStr)
 		if err != nil {
@@ -183,55 +193,55 @@ func (h *RotationHandler) GetSuggestions(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Branch not found"})
 			return
 		}
-		branches = []*models.Branch{branch}
+		branchIDs = []uuid.UUID{branchID}
 	} else {
 		allBranches, err := h.repos.Branch.List()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		branches = allBranches
-	}
-
-	// Get rotation staff
-	rotationStaff, err := h.repos.Staff.GetRotationStaff()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Generate suggestions based on business logic
-	// This is a placeholder - in production, this would call MCP client
-	suggestions := make([]gin.H, 0)
-	
-	for _, branch := range branches {
-		// Generate suggestions for each day in the date range
-		for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
-			// Simple logic: suggest rotation staff based on branch priority and expected revenue
-			// In production, this would use the allocation engine and MCP client
-			if len(rotationStaff) > 0 {
-				// Select staff based on simple criteria (coverage area, availability, etc.)
-				selectedStaff := rotationStaff[0] // Simplified selection
-				
-				// Determine assignment level based on branch priority
-				assignmentLevel := 2
-				if branch.Priority == 1 {
-					assignmentLevel = 1
-				}
-
-				suggestions = append(suggestions, gin.H{
-					"rotation_staff_id": selectedStaff.ID,
-					"branch_id":         branch.ID,
-					"date":              d.Format("2006-01-02"),
-					"assignment_level":  assignmentLevel,
-					"confidence":        0.75, // Placeholder confidence
-					"reason":            fmt.Sprintf("Suggested based on branch priority (%d) and expected revenue", branch.Priority),
-				})
-			}
+		branchIDs = make([]uuid.UUID, len(allBranches))
+		for i, branch := range allBranches {
+			branchIDs[i] = branch.ID
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"suggestions": suggestions})
+	// Use SuggestionEngine to generate suggestions based on three pillars criteria
+	suggestions, err := h.suggestionEngine.GenerateSuggestions(branchIDs, startDate, endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to generate suggestions: %v", err)})
+		return
+	}
+
+	// Convert suggestions to response format
+	response := make([]gin.H, 0)
+	for _, suggestion := range suggestions {
+		// Get assignment level from effective branch
+		assignmentLevel := 2 // Default to Level 2
+		effectiveBranches, err := h.repos.EffectiveBranch.GetByBranchID(suggestion.BranchID)
+		if err == nil {
+			for _, eb := range effectiveBranches {
+				if eb.RotationStaffID == suggestion.RotationStaffID {
+					assignmentLevel = eb.Level
+					break
+				}
+			}
+		}
+
+		response = append(response, gin.H{
+			"id":                suggestion.ID,
+			"rotation_staff_id": suggestion.RotationStaffID,
+			"branch_id":         suggestion.BranchID,
+			"date":              suggestion.Date.Format("2006-01-02"),
+			"position_id":       suggestion.PositionID,
+			"assignment_level":  assignmentLevel,
+			"confidence":        suggestion.Confidence,
+			"reason":            suggestion.Reason,
+			"status":            suggestion.Status,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"suggestions": response})
 }
 
 func (h *RotationHandler) RegenerateSuggestions(c *gin.Context) {

@@ -4,9 +4,7 @@ export interface Branch {
   id: string;
   name: string;
   code: string;
-  address: string;
   area_manager_id?: string;
-  expected_revenue: number;
   priority: number;
   created_at: string;
   updated_at: string;
@@ -15,9 +13,7 @@ export interface Branch {
 export interface CreateBranchRequest {
   name: string;
   code: string;
-  address?: string;
   area_manager_id?: string;
-  expected_revenue?: number;
   priority?: number;
 }
 

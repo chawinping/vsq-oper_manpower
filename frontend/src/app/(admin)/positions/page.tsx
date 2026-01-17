@@ -13,9 +13,9 @@ export default function PositionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<UpdatePositionRequest>({
     name: '',
-    min_staff_per_branch: 1,
-    revenue_multiplier: 0,
     display_order: 999,
+    position_type: 'branch',
+    manpower_type: 'อื่นๆ',
   });
   const [saving, setSaving] = useState(false);
 
@@ -59,9 +59,9 @@ export default function PositionsPage() {
     setEditingId(position.id);
     setEditData({
       name: position.name,
-      min_staff_per_branch: position.min_staff_per_branch,
-      revenue_multiplier: position.revenue_multiplier,
       display_order: position.display_order,
+      position_type: position.position_type,
+      manpower_type: position.manpower_type,
     });
   };
 
@@ -84,9 +84,9 @@ export default function PositionsPage() {
     setEditingId(null);
     setEditData({
       name: '',
-      min_staff_per_branch: 1,
-      revenue_multiplier: 0,
       display_order: 999,
+      position_type: 'branch',
+      manpower_type: 'อื่นๆ',
     });
   };
 
@@ -118,8 +118,10 @@ export default function PositionsPage() {
               <tr>
                 <th>Display Order</th>
                 <th>Name</th>
-                <th>Min Staff/Branch</th>
-                <th>Revenue Multiplier</th>
+                <th>Position Type</th>
+                <th>Manpower Type</th>
+                <th>No. of Staff Allocated - Branch</th>
+                <th>No. of Staff Allocated - Rotation</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -153,30 +155,51 @@ export default function PositionsPage() {
                   </td>
                   <td>
                     {editingId === position.id ? (
-                      <input
-                        type="number"
-                        value={editData.min_staff_per_branch}
-                        onChange={(e) => setEditData({ ...editData, min_staff_per_branch: parseInt(e.target.value) || 0 })}
-                        className="input-field w-24"
-                        min="0"
-                      />
+                      <select
+                        value={editData.position_type}
+                        onChange={(e) => setEditData({ ...editData, position_type: e.target.value as 'branch' | 'rotation' })}
+                        className="input-field"
+                      >
+                        <option value="branch">Branch</option>
+                        <option value="rotation">Rotation</option>
+                      </select>
                     ) : (
-                      position.min_staff_per_branch
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        position.position_type === 'branch' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-purple-100 text-purple-800'
+                      }`}>
+                        {position.position_type === 'branch' ? 'Branch' : 'Rotation'}
+                      </span>
                     )}
                   </td>
                   <td>
                     {editingId === position.id ? (
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={editData.revenue_multiplier}
-                        onChange={(e) => setEditData({ ...editData, revenue_multiplier: parseFloat(e.target.value) || 0 })}
-                        className="input-field w-24"
-                        min="0"
-                      />
+                      <select
+                        value={editData.manpower_type}
+                        onChange={(e) => setEditData({ ...editData, manpower_type: e.target.value as 'พนักงานฟร้อนท์' | 'ผู้ช่วยแพทย์' | 'อื่นๆ' | 'ทำความสะอาด' })}
+                        className="input-field"
+                      >
+                        <option value="พนักงานฟร้อนท์">พนักงานฟร้อนท์</option>
+                        <option value="ผู้ช่วยแพทย์">ผู้ช่วยแพทย์</option>
+                        <option value="อื่นๆ">อื่นๆ</option>
+                        <option value="ทำความสะอาด">ทำความสะอาด</option>
+                      </select>
                     ) : (
-                      position.revenue_multiplier.toFixed(2)
+                      <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                        {position.manpower_type}
+                      </span>
                     )}
+                  </td>
+                  <td>
+                    <span className="font-medium">
+                      {position.branch_staff_count ?? 0}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="font-medium">
+                      {position.rotation_staff_count ?? 0}
+                    </span>
                   </td>
                   <td>
                     {editingId === position.id ? (

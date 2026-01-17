@@ -6,6 +6,8 @@ export interface RotationAssignment {
   branch_id: string;
   date: string;
   assignment_level: 1 | 2;
+  is_adhoc?: boolean;
+  adhoc_reason?: string;
   schedule_status?: 'working' | 'off' | 'leave' | 'sick_leave';
   assigned_by: string;
   created_at: string;
@@ -16,6 +18,8 @@ export interface AssignRotationRequest {
   branch_id: string;
   date: string;
   assignment_level: 1 | 2;
+  is_adhoc?: boolean;
+  adhoc_reason?: string;
   schedule_status?: 'working' | 'off' | 'leave' | 'sick_leave';
 }
 

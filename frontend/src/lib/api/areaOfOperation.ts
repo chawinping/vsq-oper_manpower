@@ -44,6 +44,47 @@ export const areaOfOperationApi = {
     const response = await apiClient.delete(`/areas-of-operation/${id}`);
     return response.data;
   },
+
+  // Zone management
+  addZone: async (areaId: string, zoneId: string) => {
+    const response = await apiClient.post(`/areas-of-operation/${areaId}/zones`, {
+      zone_id: zoneId,
+    });
+    return response.data;
+  },
+
+  removeZone: async (areaId: string, zoneId: string) => {
+    const response = await apiClient.delete(`/areas-of-operation/${areaId}/zones/${zoneId}`);
+    return response.data;
+  },
+
+  getZones: async (areaId: string) => {
+    const response = await apiClient.get(`/areas-of-operation/${areaId}/zones`);
+    return (response.data.zones || []) as any[];
+  },
+
+  // Branch management
+  addBranch: async (areaId: string, branchId: string) => {
+    const response = await apiClient.post(`/areas-of-operation/${areaId}/branches`, {
+      branch_id: branchId,
+    });
+    return response.data;
+  },
+
+  removeBranch: async (areaId: string, branchId: string) => {
+    const response = await apiClient.delete(`/areas-of-operation/${areaId}/branches/${branchId}`);
+    return response.data;
+  },
+
+  getBranches: async (areaId: string) => {
+    const response = await apiClient.get(`/areas-of-operation/${areaId}/branches`);
+    return (response.data.branches || []) as any[];
+  },
+
+  getAllBranches: async (areaId: string) => {
+    const response = await apiClient.get(`/areas-of-operation/${areaId}/all-branches`);
+    return (response.data.branches || []) as any[];
+  },
 };
 
 

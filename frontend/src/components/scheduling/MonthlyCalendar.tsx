@@ -27,6 +27,7 @@ export default function MonthlyCalendar({ branchIds, branches = [] }: MonthlyCal
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; staffId: string; date: Date } | null>(null);
   const isBranchManager = user?.role === 'branch_manager';
   const showRotationStaff = user?.role === 'admin' || user?.role === 'area_manager';
+  const canEditSchedules = user?.role === 'branch_manager' || user?.role === 'admin' || user?.role === 'area_manager';
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -235,6 +236,78 @@ export default function MonthlyCalendar({ branchIds, branches = [] }: MonthlyCal
     setCurrentDate(addMonths(currentDate, 1));
   };
 
+  const handleBulkTurnOffToWorking = async () => {
+    // Confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to turn all "Off" days to "Working" days for ${format(currentDate, 'MMMM yyyy')}?\n\n` +
+      `This will affect all staff members in the selected branches for all days in this month that are currently set to "Off".`
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const monthStart = startOfMonth(currentDate);
+      const monthEnd = endOfMonth(currentDate);
+      const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+      
+      // Get all staff members for selected branches
+      const branchStaff = staff.filter(s => branchIds.includes(s.branch_id));
+      
+      // Count how many updates we'll make
+      let updateCount = 0;
+      const updatePromises: Promise<any>[] = [];
+      
+      // For each day in the month
+      for (const day of daysInMonth) {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        
+        // For each staff member
+        for (const staffMember of branchStaff) {
+          // Check if schedule exists and is "off"
+          const existingSchedule = schedules.find(
+            (s) => s.staff_id === staffMember.id && isSameDay(new Date(s.date), day)
+          );
+          
+          const currentStatus = existingSchedule?.schedule_status || 
+            (existingSchedule?.is_working_day ? 'working' : 'off');
+          
+          // Only update if status is "off" or doesn't exist (defaults to off)
+          if (!existingSchedule || currentStatus === 'off') {
+            updatePromises.push(
+              scheduleApi.create({
+                staff_id: staffMember.id,
+                branch_id: staffMember.branch_id,
+                date: dateStr,
+                schedule_status: 'working',
+              })
+            );
+            updateCount++;
+          }
+        }
+      }
+      
+      // Execute all updates in parallel (with some batching to avoid overwhelming the server)
+      const batchSize = 50;
+      for (let i = 0; i < updatePromises.length; i += batchSize) {
+        const batch = updatePromises.slice(i, i + batchSize);
+        await Promise.all(batch);
+      }
+      
+      // Reload data to reflect changes
+      await loadData();
+      
+      alert(`Successfully updated ${updateCount} schedule(s) to "Working" for ${format(currentDate, 'MMMM yyyy')}.`);
+    } catch (error: any) {
+      console.error('Failed to bulk update schedules:', error);
+      alert(`Failed to update schedules: ${error?.response?.data?.error || error?.message || 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -269,7 +342,7 @@ export default function MonthlyCalendar({ branchIds, branches = [] }: MonthlyCal
             </p>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <button
             onClick={goToPreviousMonth}
             className="btn-secondary"
@@ -288,6 +361,16 @@ export default function MonthlyCalendar({ branchIds, branches = [] }: MonthlyCal
           >
             Next
           </button>
+          {canEditSchedules && (
+            <button
+              onClick={handleBulkTurnOffToWorking}
+              className="btn-primary ml-4"
+              disabled={loading || staff.length === 0}
+              title="Turn all 'Off' days to 'Working' days for this month"
+            >
+              Turn All Off Days to Working
+            </button>
+          )}
         </div>
       </div>
 

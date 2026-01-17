@@ -12,12 +12,23 @@ export interface Staff {
   };
   branch_id?: string;
   coverage_area?: string;
-  area_of_operation_id?: string;
+  area_of_operation_id?: string; // Legacy field
   area_of_operation?: {
     id: string;
     name: string;
     code: string;
   };
+  zone_id?: string; // Zone assignment for rotation staff
+  zone?: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  branches?: Array<{
+    id: string;
+    name: string;
+    code: string;
+  }>; // Individual branches for rotation staff
   skill_level: number; // Rating 0-10
   created_at: string;
   updated_at: string;
@@ -30,7 +41,9 @@ export interface CreateStaffRequest {
   position_id: string;
   branch_id?: string;
   coverage_area?: string;
-  area_of_operation_id?: string;
+  area_of_operation_id?: string; // Legacy field
+  zone_id?: string; // Zone assignment for rotation staff
+  branch_ids?: string[]; // Individual branches for rotation staff
   skill_level?: number; // Rating 0-10
 }
 

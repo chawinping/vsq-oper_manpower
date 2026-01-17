@@ -2,15 +2,15 @@ package allocation
 
 import (
 	"fmt"
-	"vsq-oper-manpower/backend/internal/domain/models"
-	"vsq-oper-manpower/backend/internal/domain/interfaces"
+
+	"github.com/google/uuid"
 )
 
 type AllocationEngine struct {
-	repos *interfaces.Repositories
+	repos *RepositoriesWrapper
 }
 
-func NewAllocationEngine(repos *postgres.Repositories) *AllocationEngine {
+func NewAllocationEngine(repos *RepositoriesWrapper) *AllocationEngine {
 	return &AllocationEngine{repos: repos}
 }
 

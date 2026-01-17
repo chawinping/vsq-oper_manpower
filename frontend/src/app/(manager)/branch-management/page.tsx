@@ -27,9 +27,7 @@ export default function BranchManagementPage() {
   const [formData, setFormData] = useState<CreateBranchRequest>({
     name: '',
     code: '',
-    address: '',
     area_manager_id: '',
-    expected_revenue: 0,
     priority: 1,
   });
 
@@ -66,7 +64,6 @@ export default function BranchManagementPage() {
       const data: CreateBranchRequest = {
         ...formData,
         area_manager_id: formData.area_manager_id || undefined,
-        expected_revenue: formData.expected_revenue || 0,
         priority: formData.priority || 1,
       };
 
@@ -81,9 +78,7 @@ export default function BranchManagementPage() {
       setFormData({
         name: '',
         code: '',
-        address: '',
         area_manager_id: '',
-        expected_revenue: 0,
         priority: 1,
       });
       await loadBranches();
@@ -97,9 +92,7 @@ export default function BranchManagementPage() {
     setFormData({
       name: branch.name,
       code: branch.code,
-      address: branch.address,
       area_manager_id: branch.area_manager_id || '',
-      expected_revenue: branch.expected_revenue,
       priority: branch.priority,
     });
     setShowModal(true);
@@ -142,15 +135,13 @@ export default function BranchManagementPage() {
         <div className="card">
           <div className="p-4 border-b border-neutral-border">
             {canManage && (
-              <button
+                  <button
                 onClick={() => {
                   setEditingBranch(null);
                   setFormData({
                     name: '',
                     code: '',
-                    address: '',
                     area_manager_id: '',
-                    expected_revenue: 0,
                     priority: 1,
                   });
                   setShowModal(true);
@@ -168,8 +159,6 @@ export default function BranchManagementPage() {
                 <tr>
                   <th>Code</th>
                   <th>Name</th>
-                  <th>Address</th>
-                  <th>Expected Revenue</th>
                   <th>Priority</th>
                   <th>Actions</th>
                 </tr>
@@ -179,14 +168,6 @@ export default function BranchManagementPage() {
                   <tr key={branch.id}>
                     <td className="font-medium">{branch.code}</td>
                     <td>{branch.name}</td>
-                    <td>{branch.address || '-'}</td>
-                    <td>
-                      {branch.expected_revenue.toLocaleString('en-US', {
-                        style: 'currency',
-                        currency: 'THB',
-                        minimumFractionDigits: 0,
-                      })}
-                    </td>
                     <td>
                       <span className={`badge ${
                         branch.priority === 1
@@ -207,12 +188,20 @@ export default function BranchManagementPage() {
                           Revenue
                         </button>
                         {canManage && (
-                          <button
-                            onClick={() => handleEdit(branch)}
-                            className="text-salesforce-blue hover:text-salesforce-blue-hover text-sm"
-                          >
-                            Edit
-                          </button>
+                          <>
+                            <button
+                              onClick={() => window.location.href = `/branch-config/${branch.id}`}
+                              className="text-purple-600 hover:text-purple-700 text-sm"
+                            >
+                              Configure
+                            </button>
+                            <button
+                              onClick={() => handleEdit(branch)}
+                              className="text-salesforce-blue hover:text-salesforce-blue-hover text-sm"
+                            >
+                              Edit
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -260,32 +249,6 @@ export default function BranchManagementPage() {
                       required
                       value={formData.code}
                       onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                      className="input-field"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-text-primary mb-1.5">
-                      Address
-                    </label>
-                    <textarea
-                      value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      rows={3}
-                      className="input-field"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-text-primary mb-1.5">
-                      Expected Revenue (Daily)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={formData.expected_revenue}
-                      onChange={(e) =>
-                        setFormData({ ...formData, expected_revenue: parseFloat(e.target.value) || 0 })
-                      }
                       className="input-field"
                     />
                   </div>

@@ -29,13 +29,15 @@ type StaffSchedule struct {
 }
 
 type RotationAssignment struct {
-	ID              uuid.UUID `json:"id" db:"id"`
+	ID              uuid.UUID  `json:"id" db:"id"`
 	RotationStaffID uuid.UUID `json:"rotation_staff_id" db:"rotation_staff_id"`
-	RotationStaff   *Staff    `json:"rotation_staff,omitempty"`
+	RotationStaff   *Staff     `json:"rotation_staff,omitempty"`
 	BranchID        uuid.UUID `json:"branch_id" db:"branch_id"`
-	Branch          *Branch   `json:"branch,omitempty"`
+	Branch          *Branch    `json:"branch,omitempty"`
 	Date            time.Time `json:"date" db:"date"`
-	AssignmentLevel int      `json:"assignment_level" db:"assignment_level"` // 1 or 2
+	AssignmentLevel int       `json:"assignment_level" db:"assignment_level"` // 1 or 2
+	IsAdhoc         bool      `json:"is_adhoc" db:"is_adhoc"`                 // true if this is an adhoc allocation
+	AdhocReason     string    `json:"adhoc_reason,omitempty" db:"adhoc_reason"` // Reason for adhoc allocation
 	AssignedBy      uuid.UUID `json:"assigned_by" db:"assigned_by"`
 	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 }

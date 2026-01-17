@@ -50,10 +50,10 @@ func (h *PositionHandler) GetByID(c *gin.Context) {
 }
 
 type UpdatePositionRequest struct {
-	Name              string  `json:"name" binding:"required"`
-	MinStaffPerBranch int     `json:"min_staff_per_branch"`
-	RevenueMultiplier float64 `json:"revenue_multiplier"`
-	DisplayOrder      int     `json:"display_order"`
+	Name         string                `json:"name" binding:"required"`
+	DisplayOrder int                   `json:"display_order"`
+	PositionType models.PositionType   `json:"position_type" binding:"required"`
+	ManpowerType models.ManpowerType   `json:"manpower_type" binding:"required"`
 }
 
 func (h *PositionHandler) Update(c *gin.Context) {
@@ -84,8 +84,9 @@ func (h *PositionHandler) Update(c *gin.Context) {
 	position := &models.Position{
 		ID:                id,
 		Name:              req.Name,
-		MinStaffPerBranch: req.MinStaffPerBranch,
-		RevenueMultiplier: req.RevenueMultiplier,
+		PositionType:      req.PositionType,
+		ManpowerType:      req.ManpowerType,
+		MinStaffPerBranch: existingPosition.MinStaffPerBranch, // Keep existing value, don't update
 		DisplayOrder:      req.DisplayOrder,
 		CreatedAt:         existingPosition.CreatedAt,
 	}

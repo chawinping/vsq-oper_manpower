@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial project structure
 - Cursor rules configuration
 - Documentation framework
+- Allocation Report feature requirements (FR-RP-04)
+- Allocation Override functionality requirements (FR-BL-10)
+- Placeholder Report backend models and handlers
+- Placeholder Report frontend components and API
+
+### Changed
+- Updated SOFTWARE_REQUIREMENTS.md to version 1.12.0
+- Added FR-RP-04: Automatic Allocation Report - detailed reporting for each allocation iteration
+- Added FR-BL-10: Allocation Override Support - manual override functionality for automatic allocation suggestions
 
 ---
 

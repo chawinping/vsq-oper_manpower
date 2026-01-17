@@ -234,7 +234,7 @@ export default function SystemSettingsPage() {
                     value={newKey}
                     onChange={(e) => setNewKey(e.target.value)}
                     className="input-field"
-                    placeholder="e.g., min_staff_per_branch"
+                    placeholder="e.g., max_staff_per_branch"
                   />
                 </div>
                 <div>

@@ -1,16 +1,16 @@
 ---
 title: Software Architecture Document
 description: Architecture documentation for VSQ Operations Manpower System
-version: 1.0.0
-lastUpdated: 2024-12-19T12:00:00Z
+version: 1.1.0
+lastUpdated: 2026-01-17 11:09:11
 ---
 
 # VSQ Operations Manpower - Software Architecture Document
 
 ## Document Information
 
-- **Version:** 1.0.0
-- **Last Updated:** 2024-12-19T12:00:00Z
+- **Version:** 1.1.0
+- **Last Updated:** 2026-01-17 11:09:11
 - **Status:** Initial Draft
 
 ## 1. Architecture Overview
@@ -208,6 +208,36 @@ revenue_data
 ├── date (DATE)
 ├── expected_revenue (DECIMAL)
 ├── actual_revenue (DECIMAL, nullable)
+├── revenue_source (VARCHAR: 'branch' | 'doctor' | 'excel')
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+doctors
+├── id (UUID, PK)
+├── name (VARCHAR)
+├── code (VARCHAR, UNIQUE, nullable)
+├── specialization (VARCHAR, nullable)
+├── contact_info (TEXT, nullable)
+├── preferences (JSONB, nullable)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+doctor_assignments
+├── id (UUID, PK)
+├── doctor_id (UUID, FK → doctors)
+├── branch_id (UUID, FK → branches)
+├── date (DATE)
+├── expected_revenue (DECIMAL)
+├── created_by (UUID, FK → users)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+
+doctor_preferences
+├── id (UUID, PK)
+├── doctor_id (UUID, FK → doctors)
+├── branch_id (UUID, FK → branches, nullable)
+├── rule_type (VARCHAR)
+├── rule_config (JSONB)
 ├── created_at (TIMESTAMP)
 └── updated_at (TIMESTAMP)
 
@@ -249,6 +279,15 @@ staff_allocation_rules
 │   ├── POST   /
 │   ├── PUT    /:id
 │   └── GET    /:id/revenue
+├── /doctors
+│   ├── GET    /
+│   ├── POST   /
+│   ├── PUT    /:id
+│   ├── DELETE /:id
+│   ├── GET    /:id/schedule
+│   ├── POST   /:id/schedule
+│   ├── GET    /:id/preferences
+│   └── PUT    /:id/preferences
 ├── /schedules
 │   ├── GET  /branch/:branchId
 │   ├── POST /
@@ -368,6 +407,7 @@ Services:
 | Date | Version | Changes | Author |
 |------|---------|---------|--------|
 | 2024-12-19 | 1.0.0 | Initial architecture document created | System |
+| 2026-01-17 | 1.1.0 | Added Doctor Profile architecture: Added doctors, doctor_assignments, and doctor_preferences tables to database schema. Added /api/doctors endpoints for doctor profile management, schedule, and preferences. Added revenue_source field to revenue_data table to track revenue calculation source (branch/doctor/excel). | System |
 
 
 

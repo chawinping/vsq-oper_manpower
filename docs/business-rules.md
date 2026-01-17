@@ -1,8 +1,8 @@
 ---
 title: Business Rules
 description: Business rules and logic constraints for VSQ Operations Manpower
-version: 1.0.0
-lastUpdated: 2024-12-19
+version: 1.2.0
+lastUpdated: 2026-01-17 20:34:25
 ---
 
 # Business Rules
@@ -44,6 +44,15 @@ This document defines all business rules and logic constraints that govern the b
 | ID | Rule Description | Status | Priority | Implementation Notes |
 |----|------------------|--------|----------|----------------------|
 | BR-RM-01 | *To be defined* | ❌ | - | - |
+
+### Branch Logic (BL)
+
+| ID | Rule Description | Status | Priority | Implementation Notes |
+|----|------------------|--------|----------|----------------------|
+| BR-BL-15 | Branch Working Day Determination and Staff Conversion | ❌ | High | Branch working days require at least one doctor. Branch off days occur when no doctor is scheduled. Branch staff temporarily become rotation staff on branch off days. See SOFTWARE_REQUIREMENTS.md section 5 for details. |
+| BR-BL-16 | Doctor Temporary Branch Assignment | ⚠️ | Medium | Doctors can temporarily work at branches not in their default schedule via overrides. Partially implemented (override functionality exists). See SOFTWARE_REQUIREMENTS.md section 5 for details. |
+| BR-BL-17 | Default Schedule Expected Revenue Requirement | ❌ | High | Default schedules must have expected revenue associated with each day. See SOFTWARE_REQUIREMENTS.md section 5 for details. |
+| BR-BL-18 | Multiple Doctors per Branch Simultaneously | ✅ | High | A branch can have multiple doctors working simultaneously (up to 6 doctors per branch per day). See SOFTWARE_REQUIREMENTS.md section 5 for details. |
 
 ### Reporting (RP)
 
@@ -103,6 +112,8 @@ Rules that apply across multiple modules:
 | Date | Version | Changes | Author |
 |------|---------|---------|--------|
 | 2024-12-19 | 1.0.0 | Initial business rules document created | - |
+| 2026-01-17 | 1.1.0 | Added BR-BL-15: Branch Working Day Determination and Staff Conversion rule. Added Branch Logic (BL) section to business rules table. | System |
+| 2026-01-17 | 1.2.0 | Added three new business rules: BR-BL-16 (Doctor Temporary Branch Assignment), BR-BL-17 (Default Schedule Expected Revenue Requirement), and BR-BL-18 (Multiple Doctors per Branch Simultaneously). | System |
 
 ---
 

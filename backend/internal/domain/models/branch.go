@@ -7,16 +7,14 @@ import (
 )
 
 type Branch struct {
-	ID              uuid.UUID  `json:"id" db:"id"`
-	Name            string     `json:"name" db:"name"`
-	Code            string     `json:"code" db:"code"`
-	Address         string     `json:"address" db:"address"`
-	AreaManagerID   *uuid.UUID `json:"area_manager_id,omitempty" db:"area_manager_id"`
-	AreaManager     *User      `json:"area_manager,omitempty"`
-	ExpectedRevenue float64    `json:"expected_revenue" db:"expected_revenue"`
-	Priority        int        `json:"priority" db:"priority"`
-	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
+	ID            uuid.UUID  `json:"id" db:"id"`
+	Name          string     `json:"name" db:"name"`
+	Code          string     `json:"code" db:"code"`
+	AreaManagerID *uuid.UUID `json:"area_manager_id,omitempty" db:"area_manager_id"`
+	AreaManager   *User      `json:"area_manager,omitempty"`
+	Priority      int        `json:"priority" db:"priority"`
+	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 type RevenueData struct {
@@ -26,6 +24,7 @@ type RevenueData struct {
 	Date            time.Time `json:"date" db:"date"`
 	ExpectedRevenue float64  `json:"expected_revenue" db:"expected_revenue"`
 	ActualRevenue   *float64  `json:"actual_revenue,omitempty" db:"actual_revenue"`
+	RevenueSource   string    `json:"revenue_source" db:"revenue_source"` // 'branch', 'doctor', or 'excel'
 	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
 }
