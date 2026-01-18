@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"vsq-oper-manpower/backend/internal/domain/interfaces"
 	"vsq-oper-manpower/backend/internal/domain/models"
+	"vsq-oper-manpower/backend/internal/usecases/doctor"
 )
 
 type Repositories struct {
@@ -43,7 +44,7 @@ type Repositories struct {
 }
 
 func NewRepositories(db *sql.DB) *Repositories {
-	return &Repositories{
+	repos := &Repositories{
 		User:                 NewUserRepository(db),
 		Role:                 NewRoleRepository(db),
 		Staff:                NewStaffRepository(db),
@@ -61,7 +62,6 @@ func NewRepositories(db *sql.DB) *Repositories {
 		PositionQuota:        NewPositionQuotaRepository(db),
 		Doctor:               NewDoctorRepository(db),
 		DoctorPreference:     NewDoctorPreferenceRepository(db),
-		DoctorAssignment:    NewDoctorAssignmentRepository(db),
 		DoctorOnOffDay:       NewDoctorOnOffDayRepository(db),
 		DoctorDefaultSchedule: NewDoctorDefaultScheduleRepository(db),
 		DoctorWeeklyOffDay:   NewDoctorWeeklyOffDayRepository(db),
@@ -73,6 +73,17 @@ func NewRepositories(db *sql.DB) *Repositories {
 		StaffRequirementScenario: NewStaffRequirementScenarioRepository(db),
 		ScenarioPositionRequirement: NewScenarioPositionRequirementRepository(db),
 	}
+	
+	// DoctorAssignment needs schedule repositories, so create it after them
+	repos.DoctorAssignment = NewDoctorAssignmentRepository(
+		db,
+		repos.DoctorDefaultSchedule,
+		repos.DoctorWeeklyOffDay,
+		repos.DoctorScheduleOverride,
+		repos.Doctor,
+	)
+	
+	return repos
 }
 
 // UserRepository implementation
@@ -1904,11 +1915,27 @@ func (r *positionQuotaRepository) List(filters interfaces.PositionQuotaFilters) 
 
 // DoctorAssignmentRepository implementation
 type doctorAssignmentRepository struct {
-	db *sql.DB
+	db                    *sql.DB
+	defaultScheduleRepo   interfaces.DoctorDefaultScheduleRepository
+	weeklyOffDayRepo     interfaces.DoctorWeeklyOffDayRepository
+	overrideRepo          interfaces.DoctorScheduleOverrideRepository
+	doctorRepo            interfaces.DoctorRepository
 }
 
-func NewDoctorAssignmentRepository(db *sql.DB) interfaces.DoctorAssignmentRepository {
-	return &doctorAssignmentRepository{db: db}
+func NewDoctorAssignmentRepository(
+	db *sql.DB,
+	defaultScheduleRepo interfaces.DoctorDefaultScheduleRepository,
+	weeklyOffDayRepo interfaces.DoctorWeeklyOffDayRepository,
+	overrideRepo interfaces.DoctorScheduleOverrideRepository,
+	doctorRepo interfaces.DoctorRepository,
+) interfaces.DoctorAssignmentRepository {
+	return &doctorAssignmentRepository{
+		db:                  db,
+		defaultScheduleRepo: defaultScheduleRepo,
+		weeklyOffDayRepo:   weeklyOffDayRepo,
+		overrideRepo:        overrideRepo,
+		doctorRepo:          doctorRepo,
+	}
 }
 
 func (r *doctorAssignmentRepository) Create(assignment *models.DoctorAssignment) error {
@@ -1951,95 +1978,129 @@ func (r *doctorAssignmentRepository) GetByID(id uuid.UUID) (*models.DoctorAssign
 }
 
 func (r *doctorAssignmentRepository) GetByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.DoctorAssignment, error) {
-	query := `SELECT id, doctor_id, doctor_name, doctor_code, branch_id, date, expected_revenue, created_by, created_at, updated_at 
-	          FROM doctor_assignments WHERE branch_id = $1 AND date >= $2 AND date <= $3 ORDER BY date, doctor_name`
-	rows, err := r.db.Query(query, branchID, startDate, endDate)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var assignments []*models.DoctorAssignment
-	for rows.Next() {
-		assignment := &models.DoctorAssignment{}
-		if err := rows.Scan(
-			&assignment.ID, &assignment.DoctorID, &assignment.DoctorName, &assignment.DoctorCode,
-			&assignment.BranchID, &assignment.Date, &assignment.ExpectedRevenue, &assignment.CreatedBy,
-			&assignment.CreatedAt, &assignment.UpdatedAt,
-		); err != nil {
+	// Calculate from schedules instead of querying explicit assignments
+	calculator := doctor.NewDoctorScheduleCalculator(
+		r.defaultScheduleRepo,
+		r.weeklyOffDayRepo,
+		r.overrideRepo,
+		r.doctorRepo,
+	)
+	
+	assignments := []*models.DoctorAssignment{}
+	currentDate := startDate
+	for !currentDate.After(endDate) {
+		doctorIDs, err := calculator.GetDoctorsByBranchAndDate(branchID, currentDate)
+		if err != nil {
 			return nil, err
 		}
-		assignments = append(assignments, assignment)
+		
+		for _, doctorID := range doctorIDs {
+			doctor, err := r.doctorRepo.GetByID(doctorID)
+			if err != nil {
+				continue
+			}
+			if doctor == nil {
+				continue
+			}
+			
+			assignment := &models.DoctorAssignment{
+				ID:              uuid.New(),
+				DoctorID:        doctorID,
+				DoctorName:      doctor.Name,
+				DoctorCode:      doctor.Code,
+				BranchID:        branchID,
+				Date:            currentDate,
+				ExpectedRevenue: 0,
+			}
+			assignments = append(assignments, assignment)
+		}
+		
+		currentDate = currentDate.AddDate(0, 0, 1)
 	}
-	return assignments, rows.Err()
+	
+	return assignments, nil
 }
 
 func (r *doctorAssignmentRepository) GetByDate(date time.Time) ([]*models.DoctorAssignment, error) {
-	query := `SELECT da.id, da.doctor_id, COALESCE(d.name, '') as doctor_name, COALESCE(d.code, '') as doctor_code, 
-	          da.branch_id, da.date, da.expected_revenue, da.created_by, da.created_at, da.updated_at 
-	          FROM doctor_assignments da
-	          LEFT JOIN doctors d ON da.doctor_id = d.id
-	          WHERE da.date = $1 ORDER BY da.branch_id, d.name`
-	rows, err := r.db.Query(query, date)
+	// Calculate from schedules instead of querying explicit assignments
+	calculator := doctor.NewDoctorScheduleCalculator(
+		r.defaultScheduleRepo,
+		r.weeklyOffDayRepo,
+		r.overrideRepo,
+		r.doctorRepo,
+	)
+	
+	// Get all doctors and calculate their assignments for this date
+	doctors, err := r.doctorRepo.List()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var assignments []*models.DoctorAssignment
-	for rows.Next() {
-		assignment := &models.DoctorAssignment{}
-		var doctorName, doctorCode sql.NullString
-		if err := rows.Scan(
-			&assignment.ID, &assignment.DoctorID, &doctorName, &doctorCode,
-			&assignment.BranchID, &assignment.Date, &assignment.ExpectedRevenue, &assignment.CreatedBy,
-			&assignment.CreatedAt, &assignment.UpdatedAt,
-		); err != nil {
-			return nil, err
+	
+	assignments := []*models.DoctorAssignment{}
+	for _, doctor := range doctors {
+		calculated, err := calculator.CalculateAssignmentForDate(doctor.ID, date)
+		if err != nil {
+			continue
 		}
-		if doctorName.Valid {
-			assignment.DoctorName = doctorName.String
+		if calculated == nil {
+			continue // Doctor is off
 		}
-		if doctorCode.Valid {
-			assignment.DoctorCode = doctorCode.String
+		
+		assignment := &models.DoctorAssignment{
+			ID:              uuid.New(),
+			DoctorID:        calculated.DoctorID,
+			DoctorName:      doctor.Name,
+			DoctorCode:      doctor.Code,
+			BranchID:        calculated.BranchID,
+			Date:            date,
+			ExpectedRevenue: 0,
 		}
 		assignments = append(assignments, assignment)
 	}
-	return assignments, rows.Err()
+	
+	return assignments, nil
 }
 
 func (r *doctorAssignmentRepository) GetByDoctorID(doctorID uuid.UUID, startDate, endDate time.Time) ([]*models.DoctorAssignment, error) {
-	query := `SELECT da.id, da.doctor_id, COALESCE(d.name, '') as doctor_name, COALESCE(d.code, '') as doctor_code, 
-	          da.branch_id, da.date, da.expected_revenue, da.created_by, da.created_at, da.updated_at 
-	          FROM doctor_assignments da
-	          LEFT JOIN doctors d ON da.doctor_id = d.id
-	          WHERE da.doctor_id = $1 AND da.date >= $2 AND da.date <= $3 ORDER BY da.date, da.branch_id`
-	rows, err := r.db.Query(query, doctorID, startDate, endDate)
+	// Calculate from schedules instead of querying explicit assignments
+	calculator := doctor.NewDoctorScheduleCalculator(
+		r.defaultScheduleRepo,
+		r.weeklyOffDayRepo,
+		r.overrideRepo,
+		r.doctorRepo,
+	)
+	
+	doctor, err := r.doctorRepo.GetByID(doctorID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var assignments []*models.DoctorAssignment
-	for rows.Next() {
-		assignment := &models.DoctorAssignment{}
-		var doctorName, doctorCode sql.NullString
-		if err := rows.Scan(
-			&assignment.ID, &assignment.DoctorID, &doctorName, &doctorCode,
-			&assignment.BranchID, &assignment.Date, &assignment.ExpectedRevenue, &assignment.CreatedBy,
-			&assignment.CreatedAt, &assignment.UpdatedAt,
-		); err != nil {
+	if doctor == nil {
+		return []*models.DoctorAssignment{}, nil
+	}
+	
+	assignments := []*models.DoctorAssignment{}
+	currentDate := startDate
+	for !currentDate.After(endDate) {
+		calculated, err := calculator.CalculateAssignmentForDate(doctorID, currentDate)
+		if err != nil {
 			return nil, err
 		}
-		if doctorName.Valid {
-			assignment.DoctorName = doctorName.String
+		if calculated != nil {
+			assignment := &models.DoctorAssignment{
+				ID:              uuid.New(),
+				DoctorID:        doctorID,
+				DoctorName:      doctor.Name,
+				DoctorCode:      doctor.Code,
+				BranchID:        calculated.BranchID,
+				Date:            currentDate,
+				ExpectedRevenue: 0,
+			}
+			assignments = append(assignments, assignment)
 		}
-		if doctorCode.Valid {
-			assignment.DoctorCode = doctorCode.String
-		}
-		assignments = append(assignments, assignment)
+		currentDate = currentDate.AddDate(0, 0, 1)
 	}
-	return assignments, rows.Err()
+	
+	return assignments, nil
 }
 
 func (r *doctorAssignmentRepository) Update(assignment *models.DoctorAssignment) error {
@@ -2057,10 +2118,14 @@ func (r *doctorAssignmentRepository) Delete(id uuid.UUID) error {
 }
 
 func (r *doctorAssignmentRepository) GetDoctorCountByBranch(branchID uuid.UUID, date time.Time) (int, error) {
-	query := `SELECT COUNT(DISTINCT doctor_id) FROM doctor_assignments WHERE branch_id = $1 AND date = $2`
-	var count int
-	err := r.db.QueryRow(query, branchID, date).Scan(&count)
-	return count, err
+	// Calculate from schedules instead of querying explicit assignments
+	calculator := doctor.NewDoctorScheduleCalculator(
+		r.defaultScheduleRepo,
+		r.weeklyOffDayRepo,
+		r.overrideRepo,
+		r.doctorRepo,
+	)
+	return calculator.GetDoctorCountByBranch(branchID, date)
 }
 
 func (r *doctorAssignmentRepository) GetMonthlySchedule(doctorID uuid.UUID, year int, month int) ([]*models.DoctorAssignment, error) {
@@ -2076,37 +2141,43 @@ func (r *doctorAssignmentRepository) DeleteByDoctorBranchDate(doctorID uuid.UUID
 }
 
 func (r *doctorAssignmentRepository) GetDoctorsByBranchAndDate(branchID uuid.UUID, date time.Time) ([]*models.DoctorAssignment, error) {
-	query := `SELECT da.id, da.doctor_id, COALESCE(d.name, '') as doctor_name, COALESCE(d.code, '') as doctor_code, 
-	          da.branch_id, da.date, da.expected_revenue, da.created_by, da.created_at, da.updated_at
-	          FROM doctor_assignments da
-	          LEFT JOIN doctors d ON da.doctor_id = d.id
-	          WHERE da.branch_id = $1 AND da.date = $2 ORDER BY d.name`
-	rows, err := r.db.Query(query, branchID, date)
+	// Calculate from schedules instead of querying explicit assignments
+	calculator := doctor.NewDoctorScheduleCalculator(
+		r.defaultScheduleRepo,
+		r.weeklyOffDayRepo,
+		r.overrideRepo,
+		r.doctorRepo,
+	)
+	
+	doctorIDs, err := calculator.GetDoctorsByBranchAndDate(branchID, date)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var assignments []*models.DoctorAssignment
-	for rows.Next() {
-		assignment := &models.DoctorAssignment{}
-		var doctorName, doctorCode sql.NullString
-		if err := rows.Scan(
-			&assignment.ID, &assignment.DoctorID, &doctorName, &doctorCode,
-			&assignment.BranchID, &assignment.Date, &assignment.ExpectedRevenue, &assignment.CreatedBy,
-			&assignment.CreatedAt, &assignment.UpdatedAt,
-		); err != nil {
-			return nil, err
+	
+	// Convert to DoctorAssignment models
+	assignments := []*models.DoctorAssignment{}
+	for _, doctorID := range doctorIDs {
+		doctor, err := r.doctorRepo.GetByID(doctorID)
+		if err != nil {
+			continue // Skip if doctor not found
 		}
-		if doctorName.Valid {
-			assignment.DoctorName = doctorName.String
+		if doctor == nil {
+			continue
 		}
-		if doctorCode.Valid {
-			assignment.DoctorCode = doctorCode.String
+		
+		assignment := &models.DoctorAssignment{
+			ID:              uuid.New(), // Generate ID for calculated assignment
+			DoctorID:        doctorID,
+			DoctorName:      doctor.Name,
+			DoctorCode:      doctor.Code,
+			BranchID:        branchID,
+			Date:            date,
+			ExpectedRevenue: 0, // Can be set separately if needed
 		}
 		assignments = append(assignments, assignment)
 	}
-	return assignments, rows.Err()
+	
+	return assignments, nil
 }
 
 // DoctorOnOffDayRepository implementation

@@ -54,6 +54,28 @@ func (c *QuotaCalculator) CalculateBranchQuotaStatus(branchID uuid.UUID, date ti
 		return nil, fmt.Errorf("branch not found")
 	}
 
+	// Check if branch is operational (has at least one doctor)
+	// Branch operational status is determined by doctor assignments
+	doctorCount, err := c.repos.DoctorAssignment.GetDoctorCountByBranch(branchID, date)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get doctor count: %w", err)
+	}
+
+	// If branch has no doctors, it's closed - return empty status (no rotation staff needed)
+	if doctorCount == 0 {
+		return &BranchQuotaStatus{
+			BranchID:         branchID,
+			BranchName:       branch.Name,
+			BranchCode:       branch.Code,
+			Date:             date,
+			PositionStatuses: []PositionQuotaStatus{},
+			TotalDesignated:  0,
+			TotalAvailable:   0,
+			TotalAssigned:    0,
+			TotalRequired:    0,
+		}, nil
+	}
+
 	// Get position quotas for the branch
 	quotas, err := c.repos.PositionQuota.GetByBranchID(branchID)
 	if err != nil {

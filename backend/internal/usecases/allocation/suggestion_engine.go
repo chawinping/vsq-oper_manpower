@@ -46,6 +46,18 @@ func (e *SuggestionEngine) GenerateSuggestions(branchIDs []uuid.UUID, startDate,
 
 // generateSuggestionsForBranch generates suggestions for a specific branch on a specific date
 func (e *SuggestionEngine) generateSuggestionsForBranch(branchID uuid.UUID, date time.Time) ([]*models.AllocationSuggestion, error) {
+	// Check if branch is operational (has at least one doctor)
+	// Branch operational status is determined by doctor assignments
+	doctorCount, err := e.repos.DoctorAssignment.GetDoctorCountByBranch(branchID, date)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get doctor count: %w", err)
+	}
+
+	// Skip branches with no doctors (closed branches don't need rotation staff)
+	if doctorCount == 0 {
+		return []*models.AllocationSuggestion{}, nil
+	}
+
 	// Get quota status for the branch
 	quotaStatus, err := e.quotaCalculator.CalculateBranchQuotaStatus(branchID, date)
 	if err != nil {

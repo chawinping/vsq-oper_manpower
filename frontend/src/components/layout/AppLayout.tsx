@@ -40,7 +40,7 @@ const navCategories: NavCategory[] = [
     items: [
       { label: 'Staff Scheduling', href: '/staff-scheduling', roles: ['admin', 'branch_manager'] },
       { label: 'Doctor Scheduling', href: '/doctor-schedule', roles: ['admin', 'branch_manager'] },
-      { label: 'Rotation Staff Scheduling', href: '/rotation-staff-scheduling', roles: ['admin', 'area_manager', 'district_manager'] },
+      { label: 'Rotation Staff Scheduling', href: '/rotation-scheduling', roles: ['admin', 'area_manager', 'district_manager'] },
     ],
   },
   {

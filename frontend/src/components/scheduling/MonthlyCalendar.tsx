@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, compareAsc } from 'date-fns';
 import { scheduleApi, StaffSchedule, ScheduleStatus } from '@/lib/api/schedule';
 import { staffApi, Staff } from '@/lib/api/staff';
@@ -25,6 +25,13 @@ export default function MonthlyCalendar({ branchIds, branches = [] }: MonthlyCal
   const [loading, setLoading] = useState(true);
   const [selectedCell, setSelectedCell] = useState<{ staffId: string; date: Date } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; staffId: string; date: Date } | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const rotationScrollContainerRef = useRef<HTMLDivElement>(null);
+  const savedScrollPositionsRef = useRef<{
+    horizontal: number;
+    rotationHorizontal: number;
+    pageVertical: number;
+  } | null>(null);
   const isBranchManager = user?.role === 'branch_manager';
   const showRotationStaff = user?.role === 'admin' || user?.role === 'area_manager';
   const canEditSchedules = user?.role === 'branch_manager' || user?.role === 'admin' || user?.role === 'area_manager';
@@ -53,7 +60,43 @@ export default function MonthlyCalendar({ branchIds, branches = [] }: MonthlyCal
     return () => document.removeEventListener('click', handleClickOutside);
   }, [contextMenu]);
 
+  // Restore scroll positions after loading completes
+  useEffect(() => {
+    if (!loading && savedScrollPositionsRef.current) {
+      // Use double requestAnimationFrame to ensure DOM is fully rendered
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const saved = savedScrollPositionsRef.current;
+          if (!saved) return;
+          
+          // Restore page vertical scroll (use scrollTo for better compatibility)
+          window.scrollTo(0, saved.pageVertical);
+          
+          // Restore horizontal scroll for main table
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollLeft = saved.horizontal;
+          }
+          
+          // Restore horizontal scroll for rotation table
+          if (rotationScrollContainerRef.current) {
+            rotationScrollContainerRef.current.scrollLeft = saved.rotationHorizontal;
+          }
+          
+          // Clear saved positions after restoring
+          savedScrollPositionsRef.current = null;
+        });
+      });
+    }
+  }, [loading]);
+
   const loadData = async () => {
+    // Save scroll positions before loading (both horizontal table scroll and vertical page scroll)
+    savedScrollPositionsRef.current = {
+      horizontal: scrollContainerRef.current?.scrollLeft ?? 0,
+      rotationHorizontal: rotationScrollContainerRef.current?.scrollLeft ?? 0,
+      pageVertical: window.scrollY ?? 0,
+    };
+    
     try {
       setLoading(true);
       const monthStart = new Date(year, month - 1, 1);
@@ -130,6 +173,7 @@ export default function MonthlyCalendar({ branchIds, branches = [] }: MonthlyCal
       setRotationAssignments([]);
     } finally {
       setLoading(false);
+      // Scroll restoration is handled by useEffect that watches the loading state
     }
   };
 
@@ -374,7 +418,7 @@ export default function MonthlyCalendar({ branchIds, branches = [] }: MonthlyCal
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" ref={scrollContainerRef}>
         <table className="w-full border-collapse border border-neutral-border">
           <thead>
             <tr>
@@ -491,7 +535,7 @@ export default function MonthlyCalendar({ branchIds, branches = [] }: MonthlyCal
           <h3 className="text-lg font-semibold text-neutral-text-primary mb-4">
             Rotation Staff Scheduling - {format(currentDate, 'MMMM yyyy')}
           </h3>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" ref={rotationScrollContainerRef}>
             <table className="w-full border-collapse border border-neutral-border">
               <thead>
                 <tr>

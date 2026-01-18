@@ -42,6 +42,19 @@ type CreateStaffRequest struct {
 	SkillLevel        int         `json:"skill_level" binding:"min=0,max=10"`
 }
 
+type UpdateStaffRequest struct {
+	Nickname          *string     `json:"nickname,omitempty"`
+	Name              *string     `json:"name,omitempty"`
+	StaffType         *string     `json:"staff_type,omitempty"`
+	PositionID        *uuid.UUID  `json:"position_id,omitempty"`
+	BranchID          *uuid.UUID  `json:"branch_id,omitempty"`
+	CoverageArea      *string     `json:"coverage_area,omitempty"`
+	AreaOfOperationID *uuid.UUID  `json:"area_of_operation_id,omitempty"` // Legacy field
+	ZoneID            *uuid.UUID  `json:"zone_id,omitempty"`              // Zone assignment for rotation staff
+	BranchIDs         []uuid.UUID `json:"branch_ids,omitempty"`           // Individual branches for rotation staff
+	SkillLevel        *int        `json:"skill_level,omitempty" binding:"omitempty,min=0,max=10"`
+}
+
 func (h *StaffHandler) List(c *gin.Context) {
 	staffType := c.Query("staff_type")
 	branchIDStr := c.Query("branch_id")
@@ -169,7 +182,7 @@ func (h *StaffHandler) Update(c *gin.Context) {
 		return
 	}
 
-	var req CreateStaffRequest
+	var req UpdateStaffRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -185,7 +198,7 @@ func (h *StaffHandler) Update(c *gin.Context) {
 		}
 		
 		// Branch managers cannot change staff type to rotation
-		if models.StaffType(req.StaffType) == models.StaffTypeRotation {
+		if req.StaffType != nil && models.StaffType(*req.StaffType) == models.StaffTypeRotation {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Branch managers cannot change staff type to rotation"})
 			return
 		}
@@ -204,26 +217,49 @@ func (h *StaffHandler) Update(c *gin.Context) {
 		}
 	}
 
-	// Set skill level (use existing if not provided, default to 5)
-	skillLevel := req.SkillLevel
-	if skillLevel == 0 {
-		skillLevel = existingStaff.SkillLevel // Keep existing if not specified
-		if skillLevel == 0 {
-			skillLevel = 5 // Default to 5 if existing is also 0
-		}
-	}
-
+	// Merge request data with existing staff data (only update fields that are provided)
 	staff := &models.Staff{
 		ID:                id,
-		Nickname:          req.Nickname,
-		Name:              req.Name,
-		StaffType:         models.StaffType(req.StaffType),
-		PositionID:        req.PositionID,
-		BranchID:          req.BranchID,
-		CoverageArea:      req.CoverageArea,
-		AreaOfOperationID: req.AreaOfOperationID,
-		ZoneID:            req.ZoneID,
-		SkillLevel:        skillLevel,
+		Nickname:          existingStaff.Nickname,
+		Name:              existingStaff.Name,
+		StaffType:         existingStaff.StaffType,
+		PositionID:        existingStaff.PositionID,
+		BranchID:          existingStaff.BranchID,
+		CoverageArea:      existingStaff.CoverageArea,
+		AreaOfOperationID: existingStaff.AreaOfOperationID,
+		ZoneID:            existingStaff.ZoneID,
+		SkillLevel:        existingStaff.SkillLevel,
+	}
+
+	// Update fields that are provided in the request
+	if req.Nickname != nil {
+		staff.Nickname = *req.Nickname
+	}
+	if req.Name != nil {
+		staff.Name = *req.Name
+	}
+	if req.StaffType != nil {
+		staff.StaffType = models.StaffType(*req.StaffType)
+	}
+	if req.PositionID != nil {
+		staff.PositionID = *req.PositionID
+	}
+	if req.BranchID != nil {
+		staff.BranchID = req.BranchID
+	}
+	if req.CoverageArea != nil {
+		staff.CoverageArea = *req.CoverageArea
+	}
+	if req.AreaOfOperationID != nil {
+		staff.AreaOfOperationID = req.AreaOfOperationID
+	}
+	if req.ZoneID != nil {
+		staff.ZoneID = req.ZoneID
+	}
+	if req.SkillLevel != nil {
+		staff.SkillLevel = *req.SkillLevel
+	} else if staff.SkillLevel == 0 {
+		staff.SkillLevel = 5 // Default to 5 if existing is also 0
 	}
 
 	if err := h.repos.Staff.Update(staff); err != nil {
@@ -231,13 +267,11 @@ func (h *StaffHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// Update individual branches if this is rotation staff
-	if models.StaffType(req.StaffType) == models.StaffTypeRotation {
-		branchIDs := req.BranchIDs
-		if branchIDs == nil {
-			branchIDs = []uuid.UUID{} // Empty array if not provided
-		}
-		if err := h.repos.Staff.BulkUpdateBranches(id, branchIDs); err != nil {
+	// Update individual branches if this is rotation staff and branch_ids is provided
+	// If branch_ids is provided (even if empty array), update branches
+	// If branch_ids is nil/not provided, don't update branches
+	if staff.StaffType == models.StaffTypeRotation && req.BranchIDs != nil {
+		if err := h.repos.Staff.BulkUpdateBranches(id, req.BranchIDs); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to update branches: %v", err)})
 			return
 		}

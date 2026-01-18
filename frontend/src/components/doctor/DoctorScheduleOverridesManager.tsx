@@ -59,6 +59,11 @@ export default function DoctorScheduleOverridesManager({
     return overrides.find(o => isSameDay(new Date(o.date), date));
   };
 
+  const getBranchForOverride = (override: DoctorScheduleOverride): Branch | undefined => {
+    if (!override.branch_id) return undefined;
+    return branches.find(b => b.id === override.branch_id);
+  };
+
   const handleCellClick = (date: Date) => {
     const existingOverride = getOverrideForDate(date);
     setShowOverrideDialog({ date, override: existingOverride || null });
@@ -206,7 +211,7 @@ export default function DoctorScheduleOverridesManager({
                       ${isSaving ? 'opacity-50' : 'hover:opacity-80'}
                     `}
                     title={override 
-                      ? `${format(day, 'MMM d, yyyy')} - ${override.type === 'off' ? 'Off Day' : `Working at ${override.branch?.code || 'N/A'}`}` 
+                      ? `${format(day, 'MMM d, yyyy')} - ${override.type === 'off' ? 'Off Day' : `Working at ${getBranchForOverride(override)?.code || 'N/A'}`}` 
                       : `${format(day, 'MMM d, yyyy')} - Click to set override`
                     }
                   >
@@ -221,7 +226,7 @@ export default function DoctorScheduleOverridesManager({
                         {override.type === 'off' ? (
                           <span className="font-semibold">OFF</span>
                         ) : (
-                          <span>{override.branch?.code || 'N/A'}</span>
+                          <span>{getBranchForOverride(override)?.code || 'N/A'}</span>
                         )}
                       </div>
                     )}
