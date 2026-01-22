@@ -8,9 +8,18 @@ export interface RotationAssignment {
   assignment_level: 1 | 2;
   is_adhoc?: boolean;
   adhoc_reason?: string;
-  schedule_status?: 'working' | 'off' | 'leave' | 'sick_leave';
   assigned_by: string;
   created_at: string;
+}
+
+export interface RotationStaffSchedule {
+  id: string;
+  rotation_staff_id: string;
+  date: string;
+  schedule_status: 'working' | 'off' | 'leave' | 'sick_leave';
+  created_by: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AssignRotationRequest {
@@ -91,11 +100,36 @@ export const rotationApi = {
     return response.data as BulkAssignResponse;
   },
   
-  updateAssignmentStatus: async (assignmentId: string, scheduleStatus: 'working' | 'off' | 'leave' | 'sick_leave') => {
-    const response = await apiClient.patch(`/rotation/assign/${assignmentId}/status`, {
+  // Schedule management (on/off days)
+  getSchedules: async (filters?: {
+    rotation_staff_id?: string;
+    start_date?: string;
+    end_date?: string;
+    date?: string;
+  }) => {
+    const response = await apiClient.get('/rotation/schedule', { params: filters });
+    return (response.data.schedules || []) as RotationStaffSchedule[];
+  },
+  
+  setSchedule: async (data: {
+    rotation_staff_id: string;
+    date: string;
+    schedule_status: 'working' | 'off' | 'leave' | 'sick_leave';
+  }) => {
+    const response = await apiClient.post('/rotation/schedule', data);
+    return response.data.schedule as RotationStaffSchedule;
+  },
+  
+  updateSchedule: async (scheduleId: string, scheduleStatus: 'working' | 'off' | 'leave' | 'sick_leave') => {
+    const response = await apiClient.patch(`/rotation/schedule/${scheduleId}`, {
       schedule_status: scheduleStatus,
     });
-    return response.data.assignment as RotationAssignment;
+    return response.data.schedule as RotationStaffSchedule;
+  },
+  
+  deleteSchedule: async (scheduleId: string) => {
+    const response = await apiClient.delete(`/rotation/schedule/${scheduleId}`);
+    return response.data;
   },
   
   removeAssignment: async (id: string) => {

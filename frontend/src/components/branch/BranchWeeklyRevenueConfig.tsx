@@ -31,7 +31,13 @@ export default function BranchWeeklyRevenueConfig({ branchId, onSave }: BranchWe
       // Initialize all days (0-6) with default values
       for (let day = 0; day <= 6; day++) {
         const existing = revenueData.find((r) => r.day_of_week === day);
-        revenueMap.set(day, existing || { day_of_week: day, expected_revenue: 0 });
+        revenueMap.set(day, existing || {
+          day_of_week: day,
+          skin_revenue: 0,
+          ls_hm_revenue: 0,
+          vitamin_cases: 0,
+          slim_pen_cases: 0,
+        });
       }
 
       setWeeklyRevenue(revenueMap);
@@ -42,34 +48,48 @@ export default function BranchWeeklyRevenueConfig({ branchId, onSave }: BranchWe
     }
   };
 
-  const handleRevenueChange = (dayOfWeek: number, value: number) => {
+  const handleRevenueChange = (
+    dayOfWeek: number,
+    field: 'skin_revenue' | 'ls_hm_revenue' | 'vitamin_cases' | 'slim_pen_cases',
+    value: number
+  ) => {
     const revenue = weeklyRevenue.get(dayOfWeek);
     if (!revenue) return;
 
-    const updatedRevenue = { ...revenue, expected_revenue: value >= 0 ? value : 0 };
+    const updatedRevenue = { ...revenue, [field]: value >= 0 ? value : 0 };
     setWeeklyRevenue(new Map(weeklyRevenue.set(dayOfWeek, updatedRevenue)));
     setError(null);
   };
 
-  const handleFormattedInputChange = (dayOfWeek: number, inputValue: string) => {
-    // Remove all non-digit characters except decimal point
-    const cleaned = inputValue.replace(/[^\d.]/g, '');
+  const handleFormattedInputChange = (
+    dayOfWeek: number,
+    field: 'skin_revenue' | 'ls_hm_revenue' | 'vitamin_cases' | 'slim_pen_cases',
+    inputValue: string,
+    isInteger: boolean = false
+  ) => {
+    // Remove all non-digit characters except decimal point (if not integer)
+    const cleaned = isInteger
+      ? inputValue.replace(/[^\d]/g, '')
+      : inputValue.replace(/[^\d.]/g, '');
     
     // Handle empty input
     if (cleaned === '' || cleaned === '.') {
-      handleRevenueChange(dayOfWeek, 0);
+      handleRevenueChange(dayOfWeek, field, 0);
       return;
     }
 
     // Parse the numeric value
-    const numericValue = parseFloat(cleaned);
+    const numericValue = isInteger ? parseInt(cleaned, 10) : parseFloat(cleaned);
     if (!isNaN(numericValue)) {
-      handleRevenueChange(dayOfWeek, numericValue);
+      handleRevenueChange(dayOfWeek, field, numericValue);
     }
   };
 
-  const formatNumber = (value: number): string => {
+  const formatNumber = (value: number, isInteger: boolean = false): string => {
     if (value === 0) return '0';
+    if (isInteger) {
+      return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
     // Format with commas, handling decimals
     const parts = value.toString().split('.');
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -84,7 +104,10 @@ export default function BranchWeeklyRevenueConfig({ branchId, onSave }: BranchWe
     try {
       const revenueToUpdate: WeeklyRevenueUpdate[] = Array.from(weeklyRevenue.values()).map((revenue) => ({
         day_of_week: revenue.day_of_week,
-        expected_revenue: revenue.expected_revenue,
+        skin_revenue: revenue.skin_revenue || 0,
+        ls_hm_revenue: revenue.ls_hm_revenue || 0,
+        vitamin_cases: revenue.vitamin_cases || 0,
+        slim_pen_cases: revenue.slim_pen_cases || 0,
       }));
 
       await branchConfigApi.updateWeeklyRevenue(branchId, revenueToUpdate);
@@ -116,7 +139,7 @@ export default function BranchWeeklyRevenueConfig({ branchId, onSave }: BranchWe
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold">Expected Revenue per Day of Week</h3>
+        <h3 className="text-lg font-semibold">Expected Revenue & Cases per Day of Week</h3>
         <div className="flex gap-2">
           <button
             onClick={handleReset}
@@ -148,36 +171,97 @@ export default function BranchWeeklyRevenueConfig({ branchId, onSave }: BranchWe
 
       <div className="bg-white shadow rounded-lg overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h4 className="text-sm font-medium text-gray-900">Daily Expected Revenue (THB)</h4>
+          <h4 className="text-sm font-medium text-gray-900">Daily Expected Revenue & Cases</h4>
         </div>
-        <div className="px-6 py-4 space-y-3">
-          {Array.from({ length: 7 }, (_, i) => i).map((dayOfWeek) => {
-            const revenue = weeklyRevenue.get(dayOfWeek);
-            if (!revenue) return null;
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Day
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Skin Revenue (THB)
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  LS HM Revenue (THB)
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Vitamin Cases
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Slim Pen Cases
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {Array.from({ length: 7 }, (_, i) => i).map((dayOfWeek) => {
+                const revenue = weeklyRevenue.get(dayOfWeek);
+                if (!revenue) return null;
 
-            return (
-              <div key={dayOfWeek} className="flex items-center justify-between">
-                <label className="text-sm font-medium text-gray-700 w-32">
-                  {DAY_NAMES[dayOfWeek]}:
-                </label>
-                <div className="flex items-center gap-2 flex-1 max-w-md">
-                  <input
-                    type="text"
-                    value={formatNumber(revenue.expected_revenue)}
-                    onChange={(e) => handleFormattedInputChange(dayOfWeek, e.target.value)}
-                    placeholder="0"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-500">THB</span>
-                </div>
-              </div>
-            );
-          })}
+                return (
+                  <tr key={dayOfWeek}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {DAY_NAMES[dayOfWeek]}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={formatNumber(revenue.skin_revenue || 0)}
+                          onChange={(e) => handleFormattedInputChange(dayOfWeek, 'skin_revenue', e.target.value)}
+                          placeholder="0"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-500">THB</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={formatNumber(revenue.ls_hm_revenue || 0)}
+                          onChange={(e) => handleFormattedInputChange(dayOfWeek, 'ls_hm_revenue', e.target.value)}
+                          placeholder="0"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-500">THB</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={formatNumber(revenue.vitamin_cases || 0, true)}
+                          onChange={(e) => handleFormattedInputChange(dayOfWeek, 'vitamin_cases', e.target.value, true)}
+                          placeholder="0"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-500">cases</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={formatNumber(revenue.slim_pen_cases || 0, true)}
+                          onChange={(e) => handleFormattedInputChange(dayOfWeek, 'slim_pen_cases', e.target.value, true)}
+                          placeholder="0"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-500">cases</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
       <div className="text-sm text-gray-500">
-        <p>Configure expected revenue for each day of the week. This will be used in automatic allocation calculations.</p>
+        <p>Configure expected revenue and cases for each day of the week. These values will be used in automatic staff allocation calculations.</p>
       </div>
     </div>
   );

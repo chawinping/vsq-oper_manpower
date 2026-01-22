@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"vsq-oper-manpower/backend/internal/config"
 	"vsq-oper-manpower/backend/internal/repositories/postgres"
 	"vsq-oper-manpower/backend/internal/usecases/allocation"
@@ -30,7 +31,7 @@ type Handlers struct {
 	Report                  *ReportHandler
 }
 
-func NewHandlers(repos *postgres.Repositories, cfg *config.Config) *Handlers {
+func NewHandlers(repos *postgres.Repositories, cfg *config.Config, db *sql.DB) *Handlers {
 	// Initialize use cases
 	// Create a wrapper that implements the interfaces needed by use cases
 	reposWrapper := &allocation.RepositoriesWrapper{
@@ -64,7 +65,7 @@ func NewHandlers(repos *postgres.Repositories, cfg *config.Config) *Handlers {
 		Auth:               NewAuthHandler(repos, cfg),
 		User:               NewUserHandler(repos),
 		Staff:              NewStaffHandler(repos),
-		Position:           NewPositionHandler(repos),
+		Position:           NewPositionHandler(repos, db),
 		Branch:             NewBranchHandler(repos),
 		Schedule:           NewScheduleHandler(repos),
 		Rotation:           NewRotationHandler(repos, cfg, suggestionEngine),

@@ -1,34 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
-import BranchRotationTable from '@/components/rotation/BranchRotationTable';
-import RotationStaffList from '@/components/rotation/RotationStaffList';
-import { Staff } from '@/lib/api/staff';
+import RotationStaffCalendar from '@/components/rotation/RotationStaffCalendar';
 
 export default function RotationSchedulingPage() {
   const router = useRouter();
   const { user, loading } = useUser();
-  const [selectedRotationStaff, setSelectedRotationStaff] = useState<Staff[]>([]);
 
   useEffect(() => {
-    // Check if user has permission - only admin and area_manager can assign rotation staff
-    if (!loading && user && !['admin', 'area_manager'].includes(user.role)) {
+    // Check if user has permission - only admin, area_manager, and district_manager can view rotation staff schedules
+    if (!loading && user && !['admin', 'area_manager', 'district_manager'].includes(user.role)) {
       router.push('/dashboard');
     }
   }, [user, loading, router]);
-
-  const handleAddRotationStaff = (staff: Staff) => {
-    // Add staff if not already in the list
-    if (!selectedRotationStaff.find(s => s.id === staff.id)) {
-      setSelectedRotationStaff([...selectedRotationStaff, staff]);
-    }
-  };
-
-  const handleRemoveRotationStaff = (staffId: string) => {
-    setSelectedRotationStaff(selectedRotationStaff.filter(s => s.id !== staffId));
-  };
 
   if (loading) {
     return (
@@ -39,25 +25,17 @@ export default function RotationSchedulingPage() {
   }
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="mb-4">
-        <h1 className="text-2xl font-semibold text-neutral-text-primary inline">
+    <div className="p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-neutral-text-primary mb-2">
           Rotation Staff Scheduling
-          <span className="text-sm font-normal text-neutral-text-secondary ml-3">Manage rotation staff and assign them to branches</span>
         </h1>
+        <p className="text-sm text-neutral-text-secondary">
+          Set leave days, working days, and schedule status for rotation staff
+        </p>
       </div>
 
-      {/* Rotation Staff List Table */}
-      <RotationStaffList 
-        onAddToAssignment={handleAddRotationStaff}
-        selectedStaffIds={selectedRotationStaff.map(s => s.id)}
-      />
-
-      {/* Branch Rotation Assignment Table */}
-      <BranchRotationTable 
-        manuallyAddedStaff={selectedRotationStaff}
-        onRemoveStaff={handleRemoveRotationStaff}
-      />
+      <RotationStaffCalendar />
     </div>
   );
 }

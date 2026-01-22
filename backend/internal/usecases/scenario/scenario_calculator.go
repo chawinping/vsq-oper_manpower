@@ -48,7 +48,17 @@ func (c *ScenarioCalculator) CalculateStaffRequirements(
 	}
 	var dayOfWeekRevenueValue float64
 	if dayOfWeekRevenue != nil {
-		dayOfWeekRevenueValue = dayOfWeekRevenue.ExpectedRevenue
+		// Calculate total revenue from all 4 types (weighted sum)
+		dayOfWeekRevenueValue = c.calculateTotalRevenueValue(
+			dayOfWeekRevenue.SkinRevenue,
+			dayOfWeekRevenue.LSHMRevenue,
+			dayOfWeekRevenue.VitaminCases,
+			dayOfWeekRevenue.SlimPenCases,
+		)
+		// Fallback to ExpectedRevenue for backward compatibility if new fields are zero
+		if dayOfWeekRevenueValue == 0 && dayOfWeekRevenue.ExpectedRevenue > 0 {
+			dayOfWeekRevenueValue = dayOfWeekRevenue.ExpectedRevenue
+		}
 	}
 
 	// Get specific date revenue (if available)
@@ -57,12 +67,28 @@ func (c *ScenarioCalculator) CalculateStaffRequirements(
 		return nil, fmt.Errorf("failed to get specific date revenue: %w", err)
 	}
 	var specificDateRevenueValue *float64
-	if len(specificDateRevenue) > 0 && specificDateRevenue[0].ActualRevenue != nil && *specificDateRevenue[0].ActualRevenue > 0 {
-		value := *specificDateRevenue[0].ActualRevenue
-		specificDateRevenueValue = &value
-	} else if len(specificDateRevenue) > 0 && specificDateRevenue[0].ExpectedRevenue > 0 {
-		value := specificDateRevenue[0].ExpectedRevenue
-		specificDateRevenueValue = &value
+	if len(specificDateRevenue) > 0 {
+		revenue := specificDateRevenue[0]
+		// Prefer actual revenue if available, otherwise use calculated total from all types
+		if revenue.ActualRevenue != nil && *revenue.ActualRevenue > 0 {
+			value := *revenue.ActualRevenue
+			specificDateRevenueValue = &value
+		} else {
+			// Calculate total revenue from all 4 types
+			totalValue := c.calculateTotalRevenueValue(
+				revenue.SkinRevenue,
+				revenue.LSHMRevenue,
+				revenue.VitaminCases,
+				revenue.SlimPenCases,
+			)
+			// Fallback to ExpectedRevenue for backward compatibility if new fields are zero
+			if totalValue == 0 && revenue.ExpectedRevenue > 0 {
+				totalValue = revenue.ExpectedRevenue
+			}
+			if totalValue > 0 {
+				specificDateRevenueValue = &totalValue
+			}
+		}
 	}
 
 	// Get doctor count for the date
@@ -253,6 +279,27 @@ func (c *ScenarioCalculator) buildMatchReason(
 	return reasons
 }
 
+// calculateTotalRevenueValue calculates total revenue value from all 4 revenue types
+// Uses weighted sum: Skin + LS HM + (Vitamin Cases * multiplier) + (Slim Pen Cases * multiplier)
+// TODO: Make multipliers configurable via system settings
+func (c *ScenarioCalculator) calculateTotalRevenueValue(
+	skinRevenue float64,
+	lsHMRevenue float64,
+	vitaminCases int,
+	slimPenCases int,
+) float64 {
+	// Default multipliers for converting cases to revenue equivalent
+	// These should be configurable via system settings in the future
+	const vitaminCaseMultiplier = 1000.0 // Each vitamin case = 1000 THB equivalent
+	const slimPenCaseMultiplier = 1500.0 // Each slim pen case = 1500 THB equivalent
+
+	total := skinRevenue + lsHMRevenue
+	total += float64(vitaminCases) * vitaminCaseMultiplier
+	total += float64(slimPenCases) * slimPenCaseMultiplier
+
+	return total
+}
+
 // GetMatchingScenarios returns all scenarios that match the given conditions
 func (c *ScenarioCalculator) GetMatchingScenarios(
 	branchID uuid.UUID,
@@ -267,7 +314,17 @@ func (c *ScenarioCalculator) GetMatchingScenarios(
 	}
 	var dayOfWeekRevenueValue float64
 	if dayOfWeekRevenue != nil {
-		dayOfWeekRevenueValue = dayOfWeekRevenue.ExpectedRevenue
+		// Calculate total revenue from all 4 types (weighted sum)
+		dayOfWeekRevenueValue = c.calculateTotalRevenueValue(
+			dayOfWeekRevenue.SkinRevenue,
+			dayOfWeekRevenue.LSHMRevenue,
+			dayOfWeekRevenue.VitaminCases,
+			dayOfWeekRevenue.SlimPenCases,
+		)
+		// Fallback to ExpectedRevenue for backward compatibility if new fields are zero
+		if dayOfWeekRevenueValue == 0 && dayOfWeekRevenue.ExpectedRevenue > 0 {
+			dayOfWeekRevenueValue = dayOfWeekRevenue.ExpectedRevenue
+		}
 	}
 
 	// Get specific date revenue (if available)
@@ -276,12 +333,28 @@ func (c *ScenarioCalculator) GetMatchingScenarios(
 		return nil, fmt.Errorf("failed to get specific date revenue: %w", err)
 	}
 	var specificDateRevenueValue *float64
-	if len(specificDateRevenue) > 0 && specificDateRevenue[0].ActualRevenue != nil && *specificDateRevenue[0].ActualRevenue > 0 {
-		value := *specificDateRevenue[0].ActualRevenue
-		specificDateRevenueValue = &value
-	} else if len(specificDateRevenue) > 0 && specificDateRevenue[0].ExpectedRevenue > 0 {
-		value := specificDateRevenue[0].ExpectedRevenue
-		specificDateRevenueValue = &value
+	if len(specificDateRevenue) > 0 {
+		revenue := specificDateRevenue[0]
+		// Prefer actual revenue if available, otherwise use calculated total from all types
+		if revenue.ActualRevenue != nil && *revenue.ActualRevenue > 0 {
+			value := *revenue.ActualRevenue
+			specificDateRevenueValue = &value
+		} else {
+			// Calculate total revenue from all 4 types
+			totalValue := c.calculateTotalRevenueValue(
+				revenue.SkinRevenue,
+				revenue.LSHMRevenue,
+				revenue.VitaminCases,
+				revenue.SlimPenCases,
+			)
+			// Fallback to ExpectedRevenue for backward compatibility if new fields are zero
+			if totalValue == 0 && revenue.ExpectedRevenue > 0 {
+				totalValue = revenue.ExpectedRevenue
+			}
+			if totalValue > 0 {
+				specificDateRevenueValue = &totalValue
+			}
+		}
 	}
 
 	// Get doctor count for the date

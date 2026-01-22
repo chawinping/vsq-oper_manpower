@@ -84,14 +84,13 @@ export default function RotationStaffList({ onAddToAssignment, selectedStaffIds 
     // Load branches if this is rotation staff
     setLoadingStaffBranches(true);
     try {
-      const staffBranches = (staffMember as any).branches || [];
-      setSelectedBranches(staffBranches.map((b: any) => b.id));
-      
-      // Load zone branches if zone is set
+      // Load zone branches first if zone is set
+      let zoneBranchIdsList: string[] = [];
       if ((staffMember as any).zone_id) {
         try {
           const zoneBranchList = await zoneApi.getBranches((staffMember as any).zone_id);
-          setZoneBranchIds(zoneBranchList.map(b => b.id));
+          zoneBranchIdsList = zoneBranchList.map(b => b.id);
+          setZoneBranchIds(zoneBranchIdsList);
         } catch (error) {
           console.error('Failed to load zone branches:', error);
           setZoneBranchIds([]);
@@ -99,6 +98,13 @@ export default function RotationStaffList({ onAddToAssignment, selectedStaffIds 
       } else {
         setZoneBranchIds([]);
       }
+      
+      // Load staff branches and filter out zone branches (only keep additional branches)
+      const staffBranches = (staffMember as any).branches || [];
+      const allStaffBranchIds = staffBranches.map((b: any) => b.id);
+      // Only include branches that are NOT in the zone (additional branches)
+      const additionalBranchIds = allStaffBranchIds.filter((id: string) => !zoneBranchIdsList.includes(id));
+      setSelectedBranches(additionalBranchIds);
       
       // Load effective branches to get parameters
       const ebs = await effectiveBranchApi.getByRotationStaffID(staffMember.id);
@@ -132,15 +138,7 @@ export default function RotationStaffList({ onAddToAssignment, selectedStaffIds 
     if (!editingStaff) return;
 
     try {
-      const data: CreateStaffRequest = {
-        zone_id: formData.zone_id && formData.zone_id !== '' ? formData.zone_id : undefined,
-        branch_ids: selectedBranches.length > 0 ? selectedBranches : undefined,
-      };
-
-      await staffApi.update(editingStaff.id, data);
-
-      // Save effective branches for zone + additional branches (with default parameters)
-      // This determines which branches the rotation staff can work at
+      // Get zone branches to filter them out from branch_ids
       const zoneBranches: string[] = [];
       if (formData.zone_id) {
         try {
@@ -152,8 +150,36 @@ export default function RotationStaffList({ onAddToAssignment, selectedStaffIds 
         }
       }
       
+      // Filter out zone branches from selectedBranches - only send additional branches
+      const additionalBranches = selectedBranches.filter(id => !zoneBranches.includes(id));
+      
+      // Debug logging
+      console.log('Submit Debug:', {
+        selectedBranches,
+        zoneBranches,
+        additionalBranches,
+        zone_id: formData.zone_id,
+      });
+      
+      // Always send branch_ids as an array for rotation staff updates
+      // Empty array means clear all additional branches, undefined means don't update branches
+      // For rotation staff, we always want to update branches, so send array (even if empty)
+      const branchIdsToSend = additionalBranches; // Always send as array, even if empty
+      
+      const data: CreateStaffRequest = {
+        zone_id: formData.zone_id && formData.zone_id !== '' ? formData.zone_id : undefined,
+        branch_ids: branchIdsToSend, // Always send as array for rotation staff
+      };
+
+      console.log('Sending update request:', { staffId: editingStaff.id, data });
+      const updatedStaff = await staffApi.update(editingStaff.id, data);
+      console.log('Update response:', updatedStaff);
+
+      // Save effective branches for zone + additional branches (with default parameters)
+      // This determines which branches the rotation staff can work at
+      
       // All branches = zone branches + additional branches (deduplicated)
-      const allBranchIds = [...new Set([...zoneBranches, ...selectedBranches])];
+      const allBranchIds = [...new Set([...zoneBranches, ...additionalBranches])];
       
       // Create effective branches with default parameters
       // Use existing parameters if available, otherwise use defaults
@@ -183,7 +209,13 @@ export default function RotationStaffList({ onAddToAssignment, selectedStaffIds 
       setBranchParameters({});
       await loadData();
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to update staff');
+      console.error('Failed to update staff:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+      alert(error.response?.data?.error || error.message || 'Failed to update staff');
     }
   };
 
@@ -252,9 +284,8 @@ export default function RotationStaffList({ onAddToAssignment, selectedStaffIds 
               <th>Nickname</th>
               <th>Name</th>
               <th>Position</th>
-              <th>Area of Operation</th>
-              <th>Zone / Branches</th>
-              <th>Coverage Area (Legacy)</th>
+              <th>Zone</th>
+              <th>Branches</th>
               <th>Skill Level</th>
               <th>Actions</th>
               {onAddToAssignment && <th>Assignment</th>}
@@ -263,17 +294,25 @@ export default function RotationStaffList({ onAddToAssignment, selectedStaffIds 
           <tbody>
             {rotationStaff.length === 0 ? (
               <tr>
-                <td colSpan={onAddToAssignment ? 9 : 8} className="text-center py-8 text-neutral-text-secondary">
+                <td colSpan={onAddToAssignment ? 7 : 6} className="text-center py-8 text-neutral-text-secondary">
                   No rotation staff found
                 </td>
               </tr>
             ) : (
               rotationStaff.map((staff) => {
                 const position = positions.find((p) => p.id === staff.position_id);
-                const areaOfOp = areasOfOperation.find((a) => a.id === staff.area_of_operation_id);
                 const zone = zones.find((z) => z.id === (staff as any).zone_id);
                 const staffBranches = (staff as any).branches || [];
                 const isSelected = selectedStaffIds.includes(staff.id);
+                
+                // Get branch codes from staffBranches (show only codes to preserve space)
+                const branchCodes = staffBranches
+                  .map((b: any) => b.code)
+                  .filter((code: string | undefined) => code !== undefined && code !== null) as string[];
+                
+                // Display first 3 branches, then show count for remaining
+                const displayBranches = branchCodes.slice(0, 3);
+                const remainingCount = branchCodes.length - 3;
                 
                 return (
                   <tr key={staff.id}>
@@ -281,28 +320,28 @@ export default function RotationStaffList({ onAddToAssignment, selectedStaffIds 
                     <td className="font-medium">{staff.name}</td>
                     <td>{position?.name || '-'}</td>
                     <td>
-                      {areaOfOp ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {areaOfOp.name} ({areaOfOp.code})
+                      {zone ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          {zone.name} ({zone.code})
                         </span>
                       ) : (
                         '-'
                       )}
                     </td>
                     <td>
-                      {zone ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                          Zone: {zone.name} ({zone.code})
-                        </span>
-                      ) : staffBranches.length > 0 ? (
-                        <span className="text-xs text-neutral-text-secondary">
-                          {staffBranches.length} branch(es)
-                        </span>
+                      {branchCodes.length > 0 ? (
+                        <div className="text-xs text-neutral-text-secondary">
+                          {displayBranches.join(', ')}
+                          {remainingCount > 0 && (
+                            <span className="ml-1 font-medium text-neutral-text-primary">
+                              +{remainingCount} more
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         '-'
                       )}
                     </td>
-                    <td>{staff.coverage_area || '-'}</td>
                     <td>
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                         {staff.skill_level || 5}/10
@@ -401,6 +440,9 @@ export default function RotationStaffList({ onAddToAssignment, selectedStaffIds 
                             const zoneBranchList = await zoneApi.getBranches(newZoneId);
                             const zoneIds = zoneBranchList.map(b => b.id);
                             setZoneBranchIds(zoneIds);
+                            
+                            // Remove zone branches from selectedBranches (they're automatically included via zone)
+                            setSelectedBranches(prev => prev.filter(id => !zoneIds.includes(id)));
                             
                             // Initialize default parameters for zone branches if not already set
                             const newParams = { ...branchParameters };

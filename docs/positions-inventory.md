@@ -2,7 +2,7 @@
 
 This document lists all positions currently stored and used in the VSQ Operations Manpower application.
 
-**Last Updated:** 2026-01-13 18:59:28
+**Last Updated:** 2026-01-18 12:14:29
 
 ---
 
@@ -195,6 +195,13 @@ GET /api/positions/:id
 ```
 PUT /api/positions/:id
 ```
+
+### Delete Position (Admin only)
+```
+DELETE /api/positions/:id
+```
+
+**Note:** Positions can only be deleted if they are not associated with any staff members (branch or rotation). If a position has associated staff, the deletion will fail with a 409 Conflict status.
 
 ---
 

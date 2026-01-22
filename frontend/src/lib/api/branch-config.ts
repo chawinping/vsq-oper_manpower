@@ -12,7 +12,11 @@ export interface PositionQuota {
 export interface WeeklyRevenue {
   id?: string;
   day_of_week: number; // 0=Sunday, 1=Monday, ..., 6=Saturday
-  expected_revenue: number;
+  expected_revenue?: number; // Deprecated: Use skin_revenue instead
+  skin_revenue: number; // Skin revenue (THB)
+  ls_hm_revenue: number; // LS HM revenue (THB)
+  vitamin_cases: number; // Vitamin cases (count)
+  slim_pen_cases: number; // Slim Pen cases (count)
 }
 
 export interface BranchConfig {
@@ -36,7 +40,11 @@ export interface UpdateWeeklyRevenueRequest {
 
 export interface WeeklyRevenueUpdate {
   day_of_week: number;
-  expected_revenue: number;
+  expected_revenue?: number; // Deprecated: Use skin_revenue instead
+  skin_revenue: number; // Skin revenue (THB)
+  ls_hm_revenue: number; // LS HM revenue (THB)
+  vitamin_cases: number; // Vitamin cases (count)
+  slim_pen_cases: number; // Slim Pen cases (count)
 }
 
 export interface BranchConstraints {

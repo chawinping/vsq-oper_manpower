@@ -28,7 +28,7 @@ const navCategories: NavCategory[] = [
     roles: ['admin', 'area_manager', 'district_manager', 'branch_manager'],
     items: [
       { label: 'Branch Staff Profile', href: '/staff-management', roles: ['admin', 'area_manager', 'district_manager', 'branch_manager'] },
-      { label: 'Rotation Staff Profile', href: '/rotation-scheduling', roles: ['admin', 'area_manager', 'district_manager'] },
+      { label: 'Rotation Staff Profile', href: '/rotation-staff-profile', roles: ['admin', 'area_manager', 'district_manager'] },
       { label: 'Doctor Profile', href: '/doctor-management', roles: ['admin', 'area_manager', 'district_manager', 'branch_manager'] },
       { label: 'Branch Management', href: '/branch-management', roles: ['admin', 'area_manager', 'district_manager'] },
       { label: 'Positions', href: '/positions', roles: ['admin'] },

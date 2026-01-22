@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -9,14 +10,24 @@ import (
 	"vsq-oper-manpower/backend/internal/constants"
 	"vsq-oper-manpower/backend/internal/domain/models"
 	"vsq-oper-manpower/backend/internal/repositories/postgres"
+	"vsq-oper-manpower/backend/pkg/excel"
 )
 
 type BranchHandler struct {
-	repos *postgres.Repositories
+	repos         *postgres.Repositories
+	excelImporter *excel.ExcelImporter
 }
 
 func NewBranchHandler(repos *postgres.Repositories) *BranchHandler {
-	return &BranchHandler{repos: repos}
+	return &BranchHandler{
+		repos: repos,
+		excelImporter: excel.NewExcelImporter(
+			repos.Position,
+			repos.Branch,
+			repos.Doctor,
+			repos.PositionQuota,
+		),
+	}
 }
 
 type CreateBranchRequest struct {
@@ -177,5 +188,66 @@ func (h *BranchHandler) GetRevenue(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"revenue_data": revenues})
 }
 
+// ImportRevenue handles batch import of expected revenue from Excel file
+// POST /api/branches/revenue/import
+// The import overrides all existing revenue for each day of each branch.
+func (h *BranchHandler) ImportRevenue(c *gin.Context) {
+	// Get the uploaded file
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File is required"})
+		return
+	}
 
+	// Open the uploaded file
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to open file: %v", err)})
+		return
+	}
+	defer src.Close()
+
+	// Read file content
+	fileData := make([]byte, file.Size)
+	_, err = src.Read(fileData)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to read file: %v", err)})
+		return
+	}
+
+	// Import revenue data from Excel
+	revenueList, errors, parseErr := h.excelImporter.ImportBranchRevenue(fileData)
+	if parseErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": parseErr.Error(), "errors": errors})
+		return
+	}
+
+	// If there are validation errors and no valid data, return errors
+	if len(errors) > 0 && len(revenueList) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":  "Import failed with validation errors",
+			"errors": errors,
+		})
+		return
+	}
+
+	// Bulk create or update revenues
+	if len(revenueList) > 0 {
+		if err := h.repos.Revenue.BulkCreateOrUpdate(revenueList); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":  fmt.Sprintf("Failed to import revenue data: %v", err),
+				"errors": errors,
+			})
+			return
+		}
+	}
+
+	// Return success response
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "Revenue data imported successfully",
+		"imported":    len(revenueList),
+		"errors":      errors,
+		"has_errors":  len(errors) > 0,
+	})
+}
 

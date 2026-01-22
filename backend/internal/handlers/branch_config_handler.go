@@ -199,7 +199,11 @@ type UpdateWeeklyRevenueRequest struct {
 
 type WeeklyRevenueUpdate struct {
 	DayOfWeek       int     `json:"day_of_week" binding:"required"` // 0=Sunday, 6=Saturday
-	ExpectedRevenue float64 `json:"expected_revenue" binding:"required"`
+	ExpectedRevenue float64 `json:"expected_revenue,omitempty"`     // Deprecated: Use SkinRevenue instead
+	SkinRevenue     float64 `json:"skin_revenue"`                   // Skin revenue (THB)
+	LSHMRevenue     float64 `json:"ls_hm_revenue"`                  // LS HM revenue (THB)
+	VitaminCases    int     `json:"vitamin_cases"`                   // Vitamin cases (count)
+	SlimPenCases    int     `json:"slim_pen_cases"`                 // Slim Pen cases (count)
 }
 
 func (h *BranchConfigHandler) UpdateWeeklyRevenue(c *gin.Context) {
@@ -216,7 +220,7 @@ func (h *BranchConfigHandler) UpdateWeeklyRevenue(c *gin.Context) {
 		return
 	}
 
-	// Validate day_of_week and expected_revenue
+	// Validate day_of_week and revenue values
 	for _, revenue := range req.WeeklyRevenue {
 		if revenue.DayOfWeek < 0 || revenue.DayOfWeek > 6 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "day_of_week must be between 0 and 6"})
@@ -224,6 +228,22 @@ func (h *BranchConfigHandler) UpdateWeeklyRevenue(c *gin.Context) {
 		}
 		if revenue.ExpectedRevenue < 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "expected_revenue cannot be negative"})
+			return
+		}
+		if revenue.SkinRevenue < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "skin_revenue cannot be negative"})
+			return
+		}
+		if revenue.LSHMRevenue < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ls_hm_revenue cannot be negative"})
+			return
+		}
+		if revenue.VitaminCases < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "vitamin_cases cannot be negative"})
+			return
+		}
+		if revenue.SlimPenCases < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "slim_pen_cases cannot be negative"})
 			return
 		}
 	}
@@ -235,7 +255,11 @@ func (h *BranchConfigHandler) UpdateWeeklyRevenue(c *gin.Context) {
 			ID:              uuid.New(),
 			BranchID:        branchID,
 			DayOfWeek:       rev.DayOfWeek,
-			ExpectedRevenue: rev.ExpectedRevenue,
+			ExpectedRevenue: rev.ExpectedRevenue, // Keep for backward compatibility
+			SkinRevenue:     rev.SkinRevenue,
+			LSHMRevenue:     rev.LSHMRevenue,
+			VitaminCases:    rev.VitaminCases,
+			SlimPenCases:    rev.SlimPenCases,
 		})
 	}
 

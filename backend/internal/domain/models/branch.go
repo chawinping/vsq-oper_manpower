@@ -22,7 +22,16 @@ type RevenueData struct {
 	BranchID        uuid.UUID `json:"branch_id" db:"branch_id"`
 	Branch          *Branch   `json:"branch,omitempty"`
 	Date            time.Time `json:"date" db:"date"`
-	ExpectedRevenue float64  `json:"expected_revenue" db:"expected_revenue"`
+	
+	// Deprecated: Use SkinRevenue instead. Kept for backward compatibility.
+	ExpectedRevenue float64  `json:"expected_revenue,omitempty" db:"expected_revenue"`
+	
+	// New revenue type fields
+	SkinRevenue     float64  `json:"skin_revenue" db:"skin_revenue"`           // Skin revenue (THB)
+	LSHMRevenue     float64  `json:"ls_hm_revenue" db:"ls_hm_revenue"`         // LS HM revenue (THB)
+	VitaminCases    int      `json:"vitamin_cases" db:"vitamin_cases"`         // Vitamin cases (count)
+	SlimPenCases    int      `json:"slim_pen_cases" db:"slim_pen_cases"`       // Slim Pen cases (count)
+	
 	ActualRevenue   *float64  `json:"actual_revenue,omitempty" db:"actual_revenue"`
 	RevenueSource   string    `json:"revenue_source" db:"revenue_source"` // 'branch', 'doctor', or 'excel'
 	CreatedAt       time.Time `json:"created_at" db:"created_at"`

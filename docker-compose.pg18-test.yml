@@ -1,0 +1,54 @@
+# PostgreSQL 18 Test Configuration
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.pg18-test.yml up -d
+# This overrides the postgres service to use PostgreSQL 18 for testing
+
+services:
+  postgres:
+    profiles: ["pg18-test", "fullstack", "dev", "fullstack-dev", "backend-only", "hybrid-dev"]
+    image: postgres:18-alpine
+    container_name: vsq-manpower-db-pg18-test
+    environment:
+      POSTGRES_USER: ${DB_USER:-vsq_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-vsq_password}
+      POSTGRES_DB: ${DB_NAME:-vsq_manpower_pg18_test}
+    ports:
+      - "${DB_PORT:-5435}:5432"  # Use different port to avoid conflicts
+    volumes:
+      - postgres_pg18_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vsq_user} -d ${DB_NAME:-vsq_manpower_pg18_test}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend-test:
+    profiles: ["pg18-test"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: vsq-manpower-backend-pg18-test
+    ports:
+      - "8082:8080"  # Use different port to avoid conflicts
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: vsq_user
+      DB_PASSWORD: vsq_password
+      DB_NAME: vsq_manpower_pg18_test
+      DB_SSLMODE: disable
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      PORT: 8080
+      GIN_MODE: debug
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4000,http://localhost:3000,http://127.0.0.1:3000,http://127.0.0.1:4000}
+    volumes:
+      - ./backend:/app
+      - /app/tmp
+      - /app/vendor
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 10s
+
+volumes:
+  postgres_pg18_test_data:

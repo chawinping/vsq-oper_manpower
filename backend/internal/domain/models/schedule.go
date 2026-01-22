@@ -42,5 +42,16 @@ type RotationAssignment struct {
 	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 }
 
+type RotationStaffSchedule struct {
+	ID            uuid.UUID     `json:"id" db:"id"`
+	RotationStaffID uuid.UUID  `json:"rotation_staff_id" db:"rotation_staff_id"`
+	RotationStaff *Staff        `json:"rotation_staff,omitempty"`
+	Date          time.Time     `json:"date" db:"date"`
+	ScheduleStatus ScheduleStatus `json:"schedule_status" db:"schedule_status"`
+	CreatedBy     uuid.UUID     `json:"created_by" db:"created_by"`
+	CreatedAt     time.Time     `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time     `json:"updated_at" db:"updated_at"`
+}
+
 
 

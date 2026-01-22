@@ -3,7 +3,9 @@ package excel
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
@@ -13,20 +15,23 @@ import (
 
 // ExcelImporter handles importing staff data from Excel files
 type ExcelImporter struct {
-	positionRepo interfaces.PositionRepository
-	branchRepo   interfaces.BranchRepository
-	doctorRepo   interfaces.DoctorRepository
+	positionRepo   interfaces.PositionRepository
+	branchRepo     interfaces.BranchRepository
+	doctorRepo     interfaces.DoctorRepository
+	positionQuotaRepo interfaces.PositionQuotaRepository
 }
 
 func NewExcelImporter(
 	positionRepo interfaces.PositionRepository,
 	branchRepo interfaces.BranchRepository,
 	doctorRepo interfaces.DoctorRepository,
+	positionQuotaRepo interfaces.PositionQuotaRepository,
 ) *ExcelImporter {
 	return &ExcelImporter{
-		positionRepo: positionRepo,
-		branchRepo:   branchRepo,
-		doctorRepo:   doctorRepo,
+		positionRepo:      positionRepo,
+		branchRepo:        branchRepo,
+		doctorRepo:        doctorRepo,
+		positionQuotaRepo: positionQuotaRepo,
 	}
 }
 
@@ -582,5 +587,419 @@ func (e *ExcelImporter) findBranchByCodeOrName(identifier string) (*models.Branc
 	}
 
 	return nil, fmt.Errorf("branch code or name '%s' not found", identifier)
+}
+
+// ImportPositionQuotasResult contains the import results
+type ImportPositionQuotasResult struct {
+	Created int      `json:"created"`
+	Updated int      `json:"updated"`
+	Errors  []string `json:"errors"`
+}
+
+// ImportPositionQuotas parses Excel file and imports/updates position quotas
+// Expected format:
+// - Row 1: Header row (optional, will be skipped)
+// - Row 2+: Data rows
+// - Column A: Branch Code (required) - e.g., "TMA", "CPN"
+// - Column B: Position Code (required) - e.g., "BM", "ABM", "DA"
+// - Column C: Preferred No. (required) - designated_quota
+// - Column D: Minimum No. (required) - minimum_required
+func (e *ExcelImporter) ImportPositionQuotas(fileData []byte, createdBy uuid.UUID) (*ImportPositionQuotasResult, error) {
+	// Open Excel file from byte data
+	f, err := excelize.OpenReader(bytes.NewReader(fileData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open Excel file: %w", err)
+	}
+	defer f.Close()
+
+	// Get the first sheet
+	sheetName := f.GetSheetName(0)
+	if sheetName == "" {
+		return nil, fmt.Errorf("Excel file has no sheets")
+	}
+
+	rows, err := f.GetRows(sheetName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read rows: %w", err)
+	}
+
+	if len(rows) < 1 {
+		return nil, fmt.Errorf("Excel file is empty")
+	}
+
+	result := &ImportPositionQuotasResult{
+		Errors: []string{},
+	}
+
+	// Detect if first row is a header row (contains common header keywords)
+	startRow := 0
+	if len(rows) > 0 {
+		firstRow := rows[0]
+		headerKeywords := []string{"branch", "position", "code", "preferred", "minimum", "quota"}
+		isHeader := false
+		if len(firstRow) > 0 {
+			firstCell := strings.ToLower(strings.TrimSpace(firstRow[0]))
+			for _, keyword := range headerKeywords {
+				if strings.Contains(firstCell, keyword) {
+					isHeader = true
+					break
+				}
+			}
+		}
+		if isHeader {
+			startRow = 1
+		}
+	}
+
+	if len(rows) <= startRow {
+		return nil, fmt.Errorf("Excel file must have at least one data row")
+	}
+
+	// Load all positions and branches for lookup
+	positions, err := e.positionRepo.List()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load positions: %w", err)
+	}
+	positionMap := make(map[string]*models.Position) // Map position_code -> Position
+	for _, pos := range positions {
+		if pos.PositionCode != nil && *pos.PositionCode != "" {
+			positionMap[strings.ToLower(strings.TrimSpace(*pos.PositionCode))] = pos
+		}
+	}
+
+	branches, err := e.branchRepo.List()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load branches: %w", err)
+	}
+	branchMap := make(map[string]*models.Branch) // Map branch code -> Branch
+	for _, branch := range branches {
+		branchMap[strings.ToLower(strings.TrimSpace(branch.Code))] = branch
+	}
+
+	// Process data rows starting from startRow
+	for i := startRow; i < len(rows); i++ {
+		row := rows[i]
+		if len(row) < 4 {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: insufficient columns (need at least 4: Branch Code, Position Code, Preferred No., Minimum No.)", i+1))
+			continue
+		}
+
+		// Column A: Branch Code (required)
+		branchCode := strings.TrimSpace(row[0])
+		if branchCode == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: branch code is required", i+1))
+			continue
+		}
+		branch, found := branchMap[strings.ToLower(branchCode)]
+		if !found {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: branch code '%s' not found", i+1, branchCode))
+			continue
+		}
+
+		// Column B: Position Code (required)
+		positionCode := strings.TrimSpace(row[1])
+		if positionCode == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: position code is required", i+1))
+			continue
+		}
+		position, found := positionMap[strings.ToLower(positionCode)]
+		if !found {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: position code '%s' not found", i+1, positionCode))
+			continue
+		}
+
+		// Column C: Preferred No. (required) - designated_quota
+		preferredStr := strings.TrimSpace(row[2])
+		if preferredStr == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: preferred number is required", i+1))
+			continue
+		}
+		var preferredNo int
+		if _, err := fmt.Sscanf(preferredStr, "%d", &preferredNo); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: invalid preferred number '%s' (must be an integer)", i+1, preferredStr))
+			continue
+		}
+		if preferredNo < 0 {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: preferred number must be >= 0, got %d", i+1, preferredNo))
+			continue
+		}
+
+		// Column D: Minimum No. (required) - minimum_required
+		minimumStr := strings.TrimSpace(row[3])
+		if minimumStr == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: minimum number is required", i+1))
+			continue
+		}
+		var minimumNo int
+		if _, err := fmt.Sscanf(minimumStr, "%d", &minimumNo); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: invalid minimum number '%s' (must be an integer)", i+1, minimumStr))
+			continue
+		}
+		if minimumNo < 0 {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: minimum number must be >= 0, got %d", i+1, minimumNo))
+			continue
+		}
+
+		// Validate that minimum <= preferred
+		if minimumNo > preferredNo {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: minimum number (%d) cannot be greater than preferred number (%d)", i+1, minimumNo, preferredNo))
+			continue
+		}
+
+		// Check if quota already exists
+		existingQuota, err := e.positionQuotaRepo.GetByBranchAndPosition(branch.ID, position.ID)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Row %d: failed to check existing quota: %v", i+1, err))
+			continue
+		}
+
+		if existingQuota != nil {
+			// Update existing quota
+			existingQuota.DesignatedQuota = preferredNo
+			existingQuota.MinimumRequired = minimumNo
+			existingQuota.IsActive = true
+			if err := e.positionQuotaRepo.Update(existingQuota); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("Row %d: failed to update quota: %v", i+1, err))
+				continue
+			}
+			result.Updated++
+		} else {
+			// Create new quota
+			quota := &models.PositionQuota{
+				ID:              uuid.New(),
+				BranchID:        branch.ID,
+				PositionID:      position.ID,
+				DesignatedQuota:  preferredNo,
+				MinimumRequired:  minimumNo,
+				IsActive:         true,
+				CreatedBy:        createdBy,
+			}
+			if err := e.positionQuotaRepo.Create(quota); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("Row %d: failed to create quota: %v", i+1, err))
+				continue
+			}
+			result.Created++
+		}
+	}
+
+	return result, nil
+}
+
+// ImportBranchRevenueResult contains the import results for branch revenue
+type ImportBranchRevenueResult struct {
+	Created int      `json:"created"`
+	Updated int      `json:"updated"`
+	Errors  []string `json:"errors"`
+}
+
+// ImportBranchRevenue parses Excel file and imports/updates branch expected revenue
+// Expected format:
+// - Row 1: Header row (optional, will be skipped)
+// - Row 2+: Data rows
+// - Column A: Branch Code (required) - e.g., "TMA", "CPN"
+// - Column B: Date (required) - Format: YYYY-MM-DD or Excel date format
+// - Column C: Skin Revenue (required) - Decimal number (THB)
+// - Column D: LS HM Revenue (required) - Decimal number (THB)
+// - Column E: Vitamin Cases (required) - Integer (count)
+// - Column F: Slim Pen Cases (required) - Integer (count)
+// The import overrides all existing revenue for each day of each branch.
+// Note: For backward compatibility, if only Column C is provided, it will be treated as Skin Revenue.
+func (e *ExcelImporter) ImportBranchRevenue(fileData []byte) ([]*models.RevenueData, []string, error) {
+	// Open Excel file from byte data
+	f, err := excelize.OpenReader(bytes.NewReader(fileData))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open Excel file: %w", err)
+	}
+	defer f.Close()
+
+	// Get the first sheet
+	sheetName := f.GetSheetName(0)
+	if sheetName == "" {
+		return nil, nil, fmt.Errorf("Excel file has no sheets")
+	}
+
+	rows, err := f.GetRows(sheetName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read rows: %w", err)
+	}
+
+	if len(rows) < 1 {
+		return nil, nil, fmt.Errorf("Excel file is empty")
+	}
+
+	var errors []string
+
+		// Detect if first row is a header row (contains common header keywords)
+		startRow := 0
+		if len(rows) > 0 {
+			firstRow := rows[0]
+			headerKeywords := []string{"branch", "code", "date", "revenue", "expected", "skin", "ls", "hm", "vitamin", "slim", "pen", "cases"}
+			isHeader := false
+			if len(firstRow) > 0 {
+				firstCell := strings.ToLower(strings.TrimSpace(firstRow[0]))
+				for _, keyword := range headerKeywords {
+					if strings.Contains(firstCell, keyword) {
+						isHeader = true
+						break
+					}
+				}
+			}
+			if isHeader {
+				startRow = 1
+			}
+		}
+
+	if len(rows) <= startRow {
+		return nil, nil, fmt.Errorf("Excel file must have at least one data row")
+	}
+
+	// Load all branches for lookup
+	branches, err := e.branchRepo.List()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load branches: %w", err)
+	}
+	branchMap := make(map[string]*models.Branch) // Map branch code -> Branch
+	for _, branch := range branches {
+		branchMap[strings.ToLower(strings.TrimSpace(branch.Code))] = branch
+	}
+
+	var revenueList []*models.RevenueData
+
+	// Process data rows starting from startRow
+	for i := startRow; i < len(rows); i++ {
+		row := rows[i]
+		if len(row) < 3 {
+			errors = append(errors, fmt.Sprintf("Row %d: insufficient columns (need at least 3: Branch Code, Date, Skin Revenue)", i+1))
+			continue
+		}
+
+		// Column A: Branch Code (required)
+		branchCode := strings.TrimSpace(row[0])
+		if branchCode == "" {
+			errors = append(errors, fmt.Sprintf("Row %d: branch code is required", i+1))
+			continue
+		}
+		branch, found := branchMap[strings.ToLower(branchCode)]
+		if !found {
+			errors = append(errors, fmt.Sprintf("Row %d: branch code '%s' not found", i+1, branchCode))
+			continue
+		}
+
+		// Column B: Date (required)
+		dateStr := strings.TrimSpace(row[1])
+		if dateStr == "" {
+			errors = append(errors, fmt.Sprintf("Row %d: date is required", i+1))
+			continue
+		}
+
+		// Try to parse date - support both YYYY-MM-DD and Excel date format
+		var date time.Time
+		var parseErr error
+		
+		// First try YYYY-MM-DD format
+		date, parseErr = time.Parse("2006-01-02", dateStr)
+		if parseErr != nil {
+			// Try Excel date format (try parsing as float first, then as various date formats)
+			if excelDate, err := strconv.ParseFloat(dateStr, 64); err == nil {
+				// Excel date serial number (days since 1900-01-01)
+				excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+				days := int(excelDate)
+				date = excelEpoch.AddDate(0, 0, days)
+			} else {
+				// Try other common date formats
+				formats := []string{"2006/01/02", "02/01/2006", "01/02/2006", "2006-01-02 15:04:05"}
+				parsed := false
+				for _, format := range formats {
+					if d, err := time.Parse(format, dateStr); err == nil {
+						date = d
+						parsed = true
+						break
+					}
+				}
+				if !parsed {
+					errors = append(errors, fmt.Sprintf("Row %d: invalid date format '%s' (expected YYYY-MM-DD)", i+1, dateStr))
+					continue
+				}
+			}
+		}
+
+		// Column C: Skin Revenue (required)
+		skinRevenueStr := strings.TrimSpace(row[2])
+		if skinRevenueStr == "" {
+			errors = append(errors, fmt.Sprintf("Row %d: skin revenue is required", i+1))
+			continue
+		}
+		skinRevenue, err := strconv.ParseFloat(skinRevenueStr, 64)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("Row %d: invalid skin revenue '%s': %v", i+1, skinRevenueStr, err))
+			continue
+		}
+		if skinRevenue < 0 {
+			errors = append(errors, fmt.Sprintf("Row %d: skin revenue cannot be negative", i+1))
+			continue
+		}
+
+		// Column D: LS HM Revenue (optional, defaults to 0)
+		lsHMRevenue := 0.0
+		if len(row) > 3 && strings.TrimSpace(row[3]) != "" {
+			lsHMRevenueStr := strings.TrimSpace(row[3])
+			lsHMRevenue, err = strconv.ParseFloat(lsHMRevenueStr, 64)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("Row %d: invalid LS HM revenue '%s': %v", i+1, lsHMRevenueStr, err))
+				continue
+			}
+			if lsHMRevenue < 0 {
+				errors = append(errors, fmt.Sprintf("Row %d: LS HM revenue cannot be negative", i+1))
+				continue
+			}
+		}
+
+		// Column E: Vitamin Cases (optional, defaults to 0)
+		vitaminCases := 0
+		if len(row) > 4 && strings.TrimSpace(row[4]) != "" {
+			vitaminCasesStr := strings.TrimSpace(row[4])
+			vitaminCases, err = strconv.Atoi(vitaminCasesStr)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("Row %d: invalid vitamin cases '%s': %v", i+1, vitaminCasesStr, err))
+				continue
+			}
+			if vitaminCases < 0 {
+				errors = append(errors, fmt.Sprintf("Row %d: vitamin cases cannot be negative", i+1))
+				continue
+			}
+		}
+
+		// Column F: Slim Pen Cases (optional, defaults to 0)
+		slimPenCases := 0
+		if len(row) > 5 && strings.TrimSpace(row[5]) != "" {
+			slimPenCasesStr := strings.TrimSpace(row[5])
+			slimPenCases, err = strconv.Atoi(slimPenCasesStr)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("Row %d: invalid slim pen cases '%s': %v", i+1, slimPenCasesStr, err))
+				continue
+			}
+			if slimPenCases < 0 {
+				errors = append(errors, fmt.Sprintf("Row %d: slim pen cases cannot be negative", i+1))
+				continue
+			}
+		}
+
+		// Create revenue data
+		revenue := &models.RevenueData{
+			ID:              uuid.New(),
+			BranchID:        branch.ID,
+			Date:            date,
+			ExpectedRevenue: skinRevenue, // Keep for backward compatibility
+			SkinRevenue:     skinRevenue,
+			LSHMRevenue:     lsHMRevenue,
+			VitaminCases:    vitaminCases,
+			SlimPenCases:    slimPenCases,
+			ActualRevenue:   nil,
+			RevenueSource:   "excel",
+		}
+		revenueList = append(revenueList, revenue)
+	}
+
+	return revenueList, errors, nil
 }
 

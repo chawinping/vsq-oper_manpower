@@ -22,6 +22,7 @@ type Repositories struct {
 	Revenue             interfaces.RevenueRepository
 	Schedule            interfaces.ScheduleRepository
 	Rotation            interfaces.RotationRepository
+	RotationStaffSchedule interfaces.RotationStaffScheduleRepository
 	Settings            interfaces.SettingsRepository
 	AllocationRule      interfaces.AllocationRuleRepository
 		AreaOfOperation     interfaces.AreaOfOperationRepository
@@ -54,6 +55,7 @@ func NewRepositories(db *sql.DB) *Repositories {
 		Revenue:              NewRevenueRepository(db),
 		Schedule:             NewScheduleRepository(db),
 		Rotation:             NewRotationRepository(db),
+		RotationStaffSchedule: NewRotationStaffScheduleRepository(db),
 		Settings:             NewSettingsRepository(db),
 		AllocationRule:       NewAllocationRuleRepository(db),
 		AreaOfOperation:      NewAreaOfOperationRepository(db),
@@ -448,6 +450,15 @@ func (r *staffRepository) List(filters interfaces.StaffFilters) ([]*models.Staff
 			zID, _ := uuid.Parse(zoneID.String)
 			staff.ZoneID = &zID
 		}
+		
+		// Load branches if this is rotation staff
+		if staff.StaffType == models.StaffTypeRotation {
+			branches, err := r.GetBranches(staff.ID)
+			if err == nil {
+				staff.Branches = branches
+			}
+		}
+		
 		staffList = append(staffList, staff)
 	}
 	return staffList, rows.Err()
@@ -474,30 +485,61 @@ func NewPositionRepository(db *sql.DB) interfaces.PositionRepository {
 }
 
 func (r *positionRepository) Create(position *models.Position) error {
-	query := `INSERT INTO positions (id, name, min_staff_per_branch, display_order, position_type, manpower_type) 
-	          VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at`
-	return r.db.QueryRow(query, position.ID, position.Name, position.MinStaffPerBranch,
+	query := `INSERT INTO positions (id, name, position_code, min_staff_per_branch, display_order, position_type, manpower_type) 
+	          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING created_at`
+	return r.db.QueryRow(query, position.ID, position.Name, position.PositionCode, position.MinStaffPerBranch,
 		position.DisplayOrder, position.PositionType, position.ManpowerType).Scan(&position.CreatedAt)
 }
 
 func (r *positionRepository) GetByID(id uuid.UUID) (*models.Position, error) {
 	position := &models.Position{}
-	query := `SELECT id, name, min_staff_per_branch, display_order, position_type, manpower_type, created_at 
+	query := `SELECT id, name, position_code, min_staff_per_branch, display_order, position_type, manpower_type, created_at 
 	          FROM positions WHERE id = $1`
+	var positionCode sql.NullString
 	err := r.db.QueryRow(query, id).Scan(
-		&position.ID, &position.Name, &position.MinStaffPerBranch,
+		&position.ID, &position.Name, &positionCode, &position.MinStaffPerBranch,
 		&position.DisplayOrder, &position.PositionType, &position.ManpowerType, &position.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return position, err
+	if err != nil {
+		return nil, err
+	}
+	if positionCode.Valid {
+		position.PositionCode = &positionCode.String
+	}
+	return position, nil
 }
 
 func (r *positionRepository) Update(position *models.Position) error {
-	query := `UPDATE positions SET name = $1, display_order = $2, position_type = $3, manpower_type = $4 WHERE id = $5`
-	_, err := r.db.Exec(query, position.Name, position.DisplayOrder, position.PositionType, position.ManpowerType, position.ID)
+	query := `UPDATE positions SET name = $1, position_code = $2, display_order = $3, position_type = $4, manpower_type = $5 WHERE id = $6`
+	_, err := r.db.Exec(query, position.Name, position.PositionCode, position.DisplayOrder, position.PositionType, position.ManpowerType, position.ID)
 	return err
+}
+
+func (r *positionRepository) HasAssociatedStaff(id uuid.UUID) (bool, error) {
+	// Check all tables that reference positions via foreign keys:
+	// 1. staff (position_id)
+	// 2. position_quotas (position_id)
+	// 3. staff_allocation_rules (position_id)
+	// 4. allocation_suggestions (position_id)
+	// 5. scenario_position_requirements (position_id)
+	
+	query := `
+		SELECT 
+			(SELECT COUNT(*) FROM staff WHERE position_id = $1) +
+			(SELECT COUNT(*) FROM position_quotas WHERE position_id = $1) +
+			(SELECT COUNT(*) FROM staff_allocation_rules WHERE position_id = $1) +
+			(SELECT COUNT(*) FROM allocation_suggestions WHERE position_id = $1) +
+			(SELECT COUNT(*) FROM scenario_position_requirements WHERE position_id = $1) as total_count
+	`
+	var count int
+	err := r.db.QueryRow(query, id).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (r *positionRepository) Delete(id uuid.UUID) error {
@@ -507,12 +549,12 @@ func (r *positionRepository) Delete(id uuid.UUID) error {
 }
 
 func (r *positionRepository) List() ([]*models.Position, error) {
-	query := `SELECT p.id, p.name, p.min_staff_per_branch, p.display_order, p.position_type, p.manpower_type, p.created_at,
+	query := `SELECT p.id, p.name, p.position_code, p.min_staff_per_branch, p.display_order, p.position_type, p.manpower_type, p.created_at,
 	          COALESCE(COUNT(CASE WHEN s.staff_type = 'branch' THEN 1 END), 0) as branch_staff_count,
 	          COALESCE(COUNT(CASE WHEN s.staff_type = 'rotation' THEN 1 END), 0) as rotation_staff_count
 	          FROM positions p
 	          LEFT JOIN staff s ON p.id = s.position_id
-	          GROUP BY p.id, p.name, p.min_staff_per_branch, p.display_order, p.position_type, p.manpower_type, p.created_at
+	          GROUP BY p.id, p.name, p.position_code, p.min_staff_per_branch, p.display_order, p.position_type, p.manpower_type, p.created_at
 	          ORDER BY p.display_order, p.name`
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -525,11 +567,15 @@ func (r *positionRepository) List() ([]*models.Position, error) {
 		position := &models.Position{}
 		var branchStaffCount int
 		var rotationStaffCount int
+		var positionCode sql.NullString
 		if err := rows.Scan(
-			&position.ID, &position.Name, &position.MinStaffPerBranch,
+			&position.ID, &position.Name, &positionCode, &position.MinStaffPerBranch,
 			&position.DisplayOrder, &position.PositionType, &position.ManpowerType, &position.CreatedAt, &branchStaffCount, &rotationStaffCount,
 		); err != nil {
 			return nil, err
+		}
+		if positionCode.Valid {
+			position.PositionCode = &positionCode.String
 		}
 		position.BranchStaffCount = &branchStaffCount
 		position.RotationStaffCount = &rotationStaffCount
@@ -822,15 +868,16 @@ func (r *revenueRepository) Create(revenue *models.RevenueData) error {
 	if revenueSource == "" {
 		revenueSource = "branch" // Default
 	}
-	query := `INSERT INTO revenue_data (id, branch_id, date, expected_revenue, actual_revenue, revenue_source) 
-	          VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at, updated_at`
+	query := `INSERT INTO revenue_data (id, branch_id, date, expected_revenue, skin_revenue, ls_hm_revenue, vitamin_cases, slim_pen_cases, actual_revenue, revenue_source) 
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING created_at, updated_at`
 	return r.db.QueryRow(query, revenue.ID, revenue.BranchID, revenue.Date,
-		revenue.ExpectedRevenue, revenue.ActualRevenue, revenueSource).
+		revenue.ExpectedRevenue, revenue.SkinRevenue, revenue.LSHMRevenue, revenue.VitaminCases, revenue.SlimPenCases,
+		revenue.ActualRevenue, revenueSource).
 		Scan(&revenue.CreatedAt, &revenue.UpdatedAt)
 }
 
 func (r *revenueRepository) GetByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.RevenueData, error) {
-	query := `SELECT id, branch_id, date, expected_revenue, actual_revenue, COALESCE(revenue_source, 'branch') as revenue_source, created_at, updated_at 
+	query := `SELECT id, branch_id, date, expected_revenue, skin_revenue, ls_hm_revenue, vitamin_cases, slim_pen_cases, actual_revenue, COALESCE(revenue_source, 'branch') as revenue_source, created_at, updated_at 
 	          FROM revenue_data WHERE branch_id = $1 AND date >= $2 AND date <= $3 ORDER BY date`
 	rows, err := r.db.Query(query, branchID, startDate, endDate)
 	if err != nil {
@@ -845,7 +892,8 @@ func (r *revenueRepository) GetByBranchID(branchID uuid.UUID, startDate, endDate
 		var revenueSource sql.NullString
 		if err := rows.Scan(
 			&revenue.ID, &revenue.BranchID, &revenue.Date,
-			&revenue.ExpectedRevenue, &actualRevenue, &revenueSource,
+			&revenue.ExpectedRevenue, &revenue.SkinRevenue, &revenue.LSHMRevenue, &revenue.VitaminCases, &revenue.SlimPenCases,
+			&actualRevenue, &revenueSource,
 			&revenue.CreatedAt, &revenue.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -864,7 +912,7 @@ func (r *revenueRepository) GetByBranchID(branchID uuid.UUID, startDate, endDate
 }
 
 func (r *revenueRepository) GetByDate(date time.Time) ([]*models.RevenueData, error) {
-	query := `SELECT id, branch_id, date, expected_revenue, actual_revenue, COALESCE(revenue_source, 'branch') as revenue_source, created_at, updated_at 
+	query := `SELECT id, branch_id, date, expected_revenue, skin_revenue, ls_hm_revenue, vitamin_cases, slim_pen_cases, actual_revenue, COALESCE(revenue_source, 'branch') as revenue_source, created_at, updated_at 
 	          FROM revenue_data WHERE date = $1 ORDER BY branch_id`
 	rows, err := r.db.Query(query, date)
 	if err != nil {
@@ -879,7 +927,8 @@ func (r *revenueRepository) GetByDate(date time.Time) ([]*models.RevenueData, er
 		var revenueSource sql.NullString
 		if err := rows.Scan(
 			&revenue.ID, &revenue.BranchID, &revenue.Date,
-			&revenue.ExpectedRevenue, &actualRevenue, &revenueSource,
+			&revenue.ExpectedRevenue, &revenue.SkinRevenue, &revenue.LSHMRevenue, &revenue.VitaminCases, &revenue.SlimPenCases,
+			&actualRevenue, &revenueSource,
 			&revenue.CreatedAt, &revenue.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -902,10 +951,79 @@ func (r *revenueRepository) Update(revenue *models.RevenueData) error {
 	if revenueSource == "" {
 		revenueSource = "branch" // Default
 	}
-	query := `UPDATE revenue_data SET expected_revenue = $1, actual_revenue = $2, revenue_source = $3,
-	          updated_at = CURRENT_TIMESTAMP WHERE id = $4`
-	_, err := r.db.Exec(query, revenue.ExpectedRevenue, revenue.ActualRevenue, revenueSource, revenue.ID)
+	query := `UPDATE revenue_data SET expected_revenue = $1, skin_revenue = $2, ls_hm_revenue = $3, vitamin_cases = $4, slim_pen_cases = $5, actual_revenue = $6, revenue_source = $7,
+	          updated_at = CURRENT_TIMESTAMP WHERE id = $8`
+	_, err := r.db.Exec(query, revenue.ExpectedRevenue, revenue.SkinRevenue, revenue.LSHMRevenue, revenue.VitaminCases, revenue.SlimPenCases,
+		revenue.ActualRevenue, revenueSource, revenue.ID)
 	return err
+}
+
+func (r *revenueRepository) BulkCreateOrUpdate(revenues []*models.RevenueData) error {
+	if len(revenues) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Use UPSERT (INSERT ... ON CONFLICT) to create or update
+	query := `INSERT INTO revenue_data (id, branch_id, date, expected_revenue, skin_revenue, ls_hm_revenue, vitamin_cases, slim_pen_cases, actual_revenue, revenue_source, created_at, updated_at)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	          ON CONFLICT (branch_id, date) 
+	          DO UPDATE SET 
+	              expected_revenue = EXCLUDED.expected_revenue,
+	              skin_revenue = EXCLUDED.skin_revenue,
+	              ls_hm_revenue = EXCLUDED.ls_hm_revenue,
+	              vitamin_cases = EXCLUDED.vitamin_cases,
+	              slim_pen_cases = EXCLUDED.slim_pen_cases,
+	              revenue_source = EXCLUDED.revenue_source,
+	              updated_at = CURRENT_TIMESTAMP`
+
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, revenue := range revenues {
+		revenueSource := revenue.RevenueSource
+		if revenueSource == "" {
+			revenueSource = "excel" // Default for imports
+		}
+		
+		if revenue.ID == uuid.Nil {
+			revenue.ID = uuid.New()
+		}
+
+		// Normalize date to ensure it's date-only (no time component)
+		dateOnly := time.Date(revenue.Date.Year(), revenue.Date.Month(), revenue.Date.Day(), 0, 0, 0, 0, time.UTC)
+
+		_, err := stmt.Exec(
+			revenue.ID,
+			revenue.BranchID,
+			dateOnly,
+			revenue.ExpectedRevenue,
+			revenue.SkinRevenue,
+			revenue.LSHMRevenue,
+			revenue.VitaminCases,
+			revenue.SlimPenCases,
+			revenue.ActualRevenue,
+			revenueSource,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to insert/update revenue for branch %s on date %s: %w", 
+				revenue.BranchID, dateOnly.Format("2006-01-02"), err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }
 
 // ScheduleRepository implementation
@@ -1198,6 +1316,152 @@ func (r *rotationRepository) GetAssignments(filters interfaces.RotationFilters) 
 		assignments = append(assignments, assignment)
 	}
 	return assignments, rows.Err()
+}
+
+// RotationStaffScheduleRepository implementation
+type rotationStaffScheduleRepository struct {
+	db *sql.DB
+}
+
+func NewRotationStaffScheduleRepository(db *sql.DB) interfaces.RotationStaffScheduleRepository {
+	return &rotationStaffScheduleRepository{db: db}
+}
+
+func (r *rotationStaffScheduleRepository) Create(schedule *models.RotationStaffSchedule) error {
+	query := `INSERT INTO rotation_staff_schedules (id, rotation_staff_id, date, schedule_status, created_by) 
+	          VALUES ($1, $2, $3, $4, $5) 
+	          ON CONFLICT (rotation_staff_id, date) 
+	          DO UPDATE SET schedule_status = EXCLUDED.schedule_status, updated_at = CURRENT_TIMESTAMP
+	          RETURNING created_at, updated_at`
+	return r.db.QueryRow(query, schedule.ID, schedule.RotationStaffID, schedule.Date, schedule.ScheduleStatus, schedule.CreatedBy).
+		Scan(&schedule.CreatedAt, &schedule.UpdatedAt)
+}
+
+func (r *rotationStaffScheduleRepository) GetByID(id uuid.UUID) (*models.RotationStaffSchedule, error) {
+	query := `SELECT id, rotation_staff_id, date, schedule_status, created_by, created_at, updated_at 
+	          FROM rotation_staff_schedules WHERE id = $1`
+	schedule := &models.RotationStaffSchedule{}
+	err := r.db.QueryRow(query, id).Scan(
+		&schedule.ID, &schedule.RotationStaffID, &schedule.Date, &schedule.ScheduleStatus,
+		&schedule.CreatedBy, &schedule.CreatedAt, &schedule.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return schedule, nil
+}
+
+func (r *rotationStaffScheduleRepository) GetByRotationStaffID(rotationStaffID uuid.UUID, startDate, endDate time.Time) ([]*models.RotationStaffSchedule, error) {
+	query := `SELECT id, rotation_staff_id, date, schedule_status, created_by, created_at, updated_at 
+	          FROM rotation_staff_schedules 
+	          WHERE rotation_staff_id = $1 AND date >= $2 AND date <= $3 
+	          ORDER BY date`
+	rows, err := r.db.Query(query, rotationStaffID, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var schedules []*models.RotationStaffSchedule
+	for rows.Next() {
+		schedule := &models.RotationStaffSchedule{}
+		if err := rows.Scan(
+			&schedule.ID, &schedule.RotationStaffID, &schedule.Date, &schedule.ScheduleStatus,
+			&schedule.CreatedBy, &schedule.CreatedAt, &schedule.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, schedule)
+	}
+	return schedules, rows.Err()
+}
+
+func (r *rotationStaffScheduleRepository) GetByDate(date time.Time) ([]*models.RotationStaffSchedule, error) {
+	query := `SELECT id, rotation_staff_id, date, schedule_status, created_by, created_at, updated_at 
+	          FROM rotation_staff_schedules WHERE date = $1 ORDER BY rotation_staff_id`
+	rows, err := r.db.Query(query, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var schedules []*models.RotationStaffSchedule
+	for rows.Next() {
+		schedule := &models.RotationStaffSchedule{}
+		if err := rows.Scan(
+			&schedule.ID, &schedule.RotationStaffID, &schedule.Date, &schedule.ScheduleStatus,
+			&schedule.CreatedBy, &schedule.CreatedAt, &schedule.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, schedule)
+	}
+	return schedules, rows.Err()
+}
+
+func (r *rotationStaffScheduleRepository) GetByDateRange(startDate, endDate time.Time) ([]*models.RotationStaffSchedule, error) {
+	query := `SELECT id, rotation_staff_id, date, schedule_status, created_by, created_at, updated_at 
+	          FROM rotation_staff_schedules 
+	          WHERE date >= $1 AND date <= $2 
+	          ORDER BY rotation_staff_id, date`
+	rows, err := r.db.Query(query, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var schedules []*models.RotationStaffSchedule
+	for rows.Next() {
+		schedule := &models.RotationStaffSchedule{}
+		if err := rows.Scan(
+			&schedule.ID, &schedule.RotationStaffID, &schedule.Date, &schedule.ScheduleStatus,
+			&schedule.CreatedBy, &schedule.CreatedAt, &schedule.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, schedule)
+	}
+	return schedules, rows.Err()
+}
+
+func (r *rotationStaffScheduleRepository) GetByRotationStaffIDAndDate(rotationStaffID uuid.UUID, date time.Time) (*models.RotationStaffSchedule, error) {
+	query := `SELECT id, rotation_staff_id, date, schedule_status, created_by, created_at, updated_at 
+	          FROM rotation_staff_schedules WHERE rotation_staff_id = $1 AND date = $2`
+	schedule := &models.RotationStaffSchedule{}
+	err := r.db.QueryRow(query, rotationStaffID, date).Scan(
+		&schedule.ID, &schedule.RotationStaffID, &schedule.Date, &schedule.ScheduleStatus,
+		&schedule.CreatedBy, &schedule.CreatedAt, &schedule.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return schedule, nil
+}
+
+func (r *rotationStaffScheduleRepository) Update(schedule *models.RotationStaffSchedule) error {
+	query := `UPDATE rotation_staff_schedules 
+	          SET schedule_status = $1, updated_at = CURRENT_TIMESTAMP 
+	          WHERE id = $2 
+	          RETURNING updated_at`
+	return r.db.QueryRow(query, schedule.ScheduleStatus, schedule.ID).Scan(&schedule.UpdatedAt)
+}
+
+func (r *rotationStaffScheduleRepository) Delete(id uuid.UUID) error {
+	query := `DELETE FROM rotation_staff_schedules WHERE id = $1`
+	_, err := r.db.Exec(query, id)
+	return err
+}
+
+func (r *rotationStaffScheduleRepository) DeleteByRotationStaffID(rotationStaffID uuid.UUID) error {
+	query := `DELETE FROM rotation_staff_schedules WHERE rotation_staff_id = $1`
+	_, err := r.db.Exec(query, rotationStaffID)
+	return err
 }
 
 // SettingsRepository implementation

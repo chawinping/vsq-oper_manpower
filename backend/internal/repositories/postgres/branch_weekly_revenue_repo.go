@@ -18,26 +18,29 @@ func NewBranchWeeklyRevenueRepository(db *sql.DB) interfaces.BranchWeeklyRevenue
 }
 
 func (r *branchWeeklyRevenueRepository) Create(revenue *models.BranchWeeklyRevenue) error {
-	query := `INSERT INTO branch_weekly_revenue (id, branch_id, day_of_week, expected_revenue) 
-	          VALUES ($1, $2, $3, $4) RETURNING created_at, updated_at`
-	return r.db.QueryRow(query, revenue.ID, revenue.BranchID, revenue.DayOfWeek, revenue.ExpectedRevenue).
+	query := `INSERT INTO branch_weekly_revenue (id, branch_id, day_of_week, expected_revenue, skin_revenue, ls_hm_revenue, vitamin_cases, slim_pen_cases) 
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at, updated_at`
+	return r.db.QueryRow(query, revenue.ID, revenue.BranchID, revenue.DayOfWeek, revenue.ExpectedRevenue,
+		revenue.SkinRevenue, revenue.LSHMRevenue, revenue.VitaminCases, revenue.SlimPenCases).
 		Scan(&revenue.CreatedAt, &revenue.UpdatedAt)
 }
 
 func (r *branchWeeklyRevenueRepository) Update(revenue *models.BranchWeeklyRevenue) error {
 	query := `UPDATE branch_weekly_revenue 
-	          SET day_of_week = $2, expected_revenue = $3, updated_at = CURRENT_TIMESTAMP 
+	          SET day_of_week = $2, expected_revenue = $3, skin_revenue = $4, ls_hm_revenue = $5, vitamin_cases = $6, slim_pen_cases = $7, updated_at = CURRENT_TIMESTAMP 
 	          WHERE id = $1 RETURNING updated_at`
-	return r.db.QueryRow(query, revenue.ID, revenue.DayOfWeek, revenue.ExpectedRevenue).
+	return r.db.QueryRow(query, revenue.ID, revenue.DayOfWeek, revenue.ExpectedRevenue,
+		revenue.SkinRevenue, revenue.LSHMRevenue, revenue.VitaminCases, revenue.SlimPenCases).
 		Scan(&revenue.UpdatedAt)
 }
 
 func (r *branchWeeklyRevenueRepository) GetByID(id uuid.UUID) (*models.BranchWeeklyRevenue, error) {
 	revenue := &models.BranchWeeklyRevenue{}
-	query := `SELECT id, branch_id, day_of_week, expected_revenue, created_at, updated_at 
+	query := `SELECT id, branch_id, day_of_week, expected_revenue, skin_revenue, ls_hm_revenue, vitamin_cases, slim_pen_cases, created_at, updated_at 
 	          FROM branch_weekly_revenue WHERE id = $1`
 	err := r.db.QueryRow(query, id).Scan(
 		&revenue.ID, &revenue.BranchID, &revenue.DayOfWeek, &revenue.ExpectedRevenue,
+		&revenue.SkinRevenue, &revenue.LSHMRevenue, &revenue.VitaminCases, &revenue.SlimPenCases,
 		&revenue.CreatedAt, &revenue.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -50,7 +53,7 @@ func (r *branchWeeklyRevenueRepository) GetByID(id uuid.UUID) (*models.BranchWee
 }
 
 func (r *branchWeeklyRevenueRepository) GetByBranchID(branchID uuid.UUID) ([]*models.BranchWeeklyRevenue, error) {
-	query := `SELECT id, branch_id, day_of_week, expected_revenue, created_at, updated_at 
+	query := `SELECT id, branch_id, day_of_week, expected_revenue, skin_revenue, ls_hm_revenue, vitamin_cases, slim_pen_cases, created_at, updated_at 
 	          FROM branch_weekly_revenue WHERE branch_id = $1 ORDER BY day_of_week`
 	rows, err := r.db.Query(query, branchID)
 	if err != nil {
@@ -63,6 +66,7 @@ func (r *branchWeeklyRevenueRepository) GetByBranchID(branchID uuid.UUID) ([]*mo
 		revenue := &models.BranchWeeklyRevenue{}
 		if err := rows.Scan(
 			&revenue.ID, &revenue.BranchID, &revenue.DayOfWeek, &revenue.ExpectedRevenue,
+			&revenue.SkinRevenue, &revenue.LSHMRevenue, &revenue.VitaminCases, &revenue.SlimPenCases,
 			&revenue.CreatedAt, &revenue.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -74,10 +78,11 @@ func (r *branchWeeklyRevenueRepository) GetByBranchID(branchID uuid.UUID) ([]*mo
 
 func (r *branchWeeklyRevenueRepository) GetByBranchIDAndDayOfWeek(branchID uuid.UUID, dayOfWeek int) (*models.BranchWeeklyRevenue, error) {
 	revenue := &models.BranchWeeklyRevenue{}
-	query := `SELECT id, branch_id, day_of_week, expected_revenue, created_at, updated_at 
+	query := `SELECT id, branch_id, day_of_week, expected_revenue, skin_revenue, ls_hm_revenue, vitamin_cases, slim_pen_cases, created_at, updated_at 
 	          FROM branch_weekly_revenue WHERE branch_id = $1 AND day_of_week = $2`
 	err := r.db.QueryRow(query, branchID, dayOfWeek).Scan(
 		&revenue.ID, &revenue.BranchID, &revenue.DayOfWeek, &revenue.ExpectedRevenue,
+		&revenue.SkinRevenue, &revenue.LSHMRevenue, &revenue.VitaminCases, &revenue.SlimPenCases,
 		&revenue.CreatedAt, &revenue.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -102,17 +107,18 @@ func (r *branchWeeklyRevenueRepository) BulkUpsert(revenues []*models.BranchWeek
 	}
 	defer tx.Rollback()
 
-	query := `INSERT INTO branch_weekly_revenue (id, branch_id, day_of_week, expected_revenue, created_at, updated_at)
-	          VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	query := `INSERT INTO branch_weekly_revenue (id, branch_id, day_of_week, expected_revenue, skin_revenue, ls_hm_revenue, vitamin_cases, slim_pen_cases, created_at, updated_at)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	          ON CONFLICT (branch_id, day_of_week) 
-	          DO UPDATE SET expected_revenue = EXCLUDED.expected_revenue, updated_at = CURRENT_TIMESTAMP
+	          DO UPDATE SET expected_revenue = EXCLUDED.expected_revenue, skin_revenue = EXCLUDED.skin_revenue, ls_hm_revenue = EXCLUDED.ls_hm_revenue, vitamin_cases = EXCLUDED.vitamin_cases, slim_pen_cases = EXCLUDED.slim_pen_cases, updated_at = CURRENT_TIMESTAMP
 	          RETURNING created_at, updated_at`
 
 	for _, revenue := range revenues {
 		if revenue.ID == uuid.Nil {
 			revenue.ID = uuid.New()
 		}
-		err := tx.QueryRow(query, revenue.ID, revenue.BranchID, revenue.DayOfWeek, revenue.ExpectedRevenue).
+		err := tx.QueryRow(query, revenue.ID, revenue.BranchID, revenue.DayOfWeek, revenue.ExpectedRevenue,
+			revenue.SkinRevenue, revenue.LSHMRevenue, revenue.VitaminCases, revenue.SlimPenCases).
 			Scan(&revenue.CreatedAt, &revenue.UpdatedAt)
 		if err != nil {
 			return err

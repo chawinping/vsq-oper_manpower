@@ -49,6 +49,7 @@ type PositionRepository interface {
 	Update(position *models.Position) error
 	Delete(id uuid.UUID) error
 	List() ([]*models.Position, error)
+	HasAssociatedStaff(id uuid.UUID) (bool, error)
 }
 
 type BranchRepository interface {
@@ -75,6 +76,7 @@ type RevenueRepository interface {
 	GetByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.RevenueData, error)
 	GetByDate(date time.Time) ([]*models.RevenueData, error)
 	Update(revenue *models.RevenueData) error
+	BulkCreateOrUpdate(revenues []*models.RevenueData) error
 }
 
 type ScheduleRepository interface {
@@ -95,6 +97,18 @@ type RotationRepository interface {
 	Delete(id uuid.UUID) error
 	DeleteByRotationStaffID(rotationStaffID uuid.UUID) error
 	GetAssignments(filters RotationFilters) ([]*models.RotationAssignment, error)
+}
+
+type RotationStaffScheduleRepository interface {
+	Create(schedule *models.RotationStaffSchedule) error
+	GetByID(id uuid.UUID) (*models.RotationStaffSchedule, error)
+	GetByRotationStaffID(rotationStaffID uuid.UUID, startDate, endDate time.Time) ([]*models.RotationStaffSchedule, error)
+	GetByDate(date time.Time) ([]*models.RotationStaffSchedule, error)
+	GetByDateRange(startDate, endDate time.Time) ([]*models.RotationStaffSchedule, error)
+	GetByRotationStaffIDAndDate(rotationStaffID uuid.UUID, date time.Time) (*models.RotationStaffSchedule, error)
+	Update(schedule *models.RotationStaffSchedule) error
+	Delete(id uuid.UUID) error
+	DeleteByRotationStaffID(rotationStaffID uuid.UUID) error
 }
 
 type RotationFilters struct {

@@ -25,6 +25,7 @@ func NewStaffHandler(repos *postgres.Repositories) *StaffHandler {
 			repos.Position,
 			repos.Branch,
 			repos.Doctor,
+			repos.PositionQuota,
 		),
 	}
 }

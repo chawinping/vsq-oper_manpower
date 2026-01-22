@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -10,17 +12,25 @@ import (
 	"vsq-oper-manpower/backend/internal/domain/models"
 	"vsq-oper-manpower/backend/internal/repositories/postgres"
 	"vsq-oper-manpower/backend/internal/usecases/allocation"
+	"vsq-oper-manpower/backend/pkg/excel"
 )
 
 type QuotaHandler struct {
 	repos           *postgres.Repositories
 	quotaCalculator *allocation.QuotaCalculator
+	excelImporter   *excel.ExcelImporter
 }
 
 func NewQuotaHandler(repos *postgres.Repositories, quotaCalculator *allocation.QuotaCalculator) *QuotaHandler {
 	return &QuotaHandler{
 		repos:           repos,
 		quotaCalculator: quotaCalculator,
+		excelImporter: excel.NewExcelImporter(
+			repos.Position,
+			repos.Branch,
+			repos.Doctor,
+			repos.PositionQuota,
+		),
 	}
 }
 
@@ -196,4 +206,69 @@ func (h *QuotaHandler) GetBranchQuotaStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": status})
+}
+
+func (h *QuotaHandler) Import(c *gin.Context) {
+	// Get the uploaded file
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
+		return
+	}
+
+	// Open the uploaded file
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open file"})
+		return
+	}
+	defer src.Close()
+
+	// Read file content
+	fileData, err := io.ReadAll(src)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file"})
+		return
+	}
+
+	// Get user ID for created_by field
+	userIDStr := c.MustGet("user_id").(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	// Import position quotas from Excel
+	result, importErr := h.excelImporter.ImportPositionQuotas(fileData, userID)
+	if importErr != nil {
+		// If no records were imported, return error immediately
+		if result == nil || (result.Created == 0 && result.Updated == 0) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": importErr.Error()})
+			return
+		}
+		// If there are valid records but also import errors, continue with partial success
+	}
+
+	// Prepare response
+	response := gin.H{
+		"message": fmt.Sprintf("Import completed: %d created, %d updated", result.Created, result.Updated),
+		"created": result.Created,
+		"updated": result.Updated,
+	}
+
+	// Include errors if any
+	if len(result.Errors) > 0 {
+		response["errors"] = result.Errors
+		response["warning"] = fmt.Sprintf("Import completed with %d error(s)", len(result.Errors))
+	}
+
+	// If there were import errors but we still have a result, return partial success
+	if importErr != nil && (result.Created > 0 || result.Updated > 0) {
+		c.JSON(http.StatusOK, response)
+		return
+	}
+
+	// Success
+	c.JSON(http.StatusOK, response)
 }

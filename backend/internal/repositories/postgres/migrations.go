@@ -1,4 +1,4 @@
-package postgres
+﻿package postgres
 
 import (
 	"database/sql"
@@ -12,8 +12,8 @@ import (
 func RunMigrations(db *sql.DB) error {
 	migrations := []string{
 		createRolesTable,
+		createBranchesTable,  // Must be before users table (users.branch_id references branches.id)
 		createUsersTable,
-		createBranchesTable,
 		createPositionsTable,
 		createAreasOfOperationTable,
 		createZonesTable,
@@ -26,6 +26,7 @@ func RunMigrations(db *sql.DB) error {
 		createRevenueDataTable,
 		createStaffSchedulesTable,
 		createRotationAssignmentsTable,
+		createRotationStaffSchedulesTable,
 		createSystemSettingsTable,
 		createStaffAllocationRulesTable,
 		createAllocationCriteriaTable,
@@ -57,6 +58,24 @@ func RunMigrations(db *sql.DB) error {
 		}
 	}
 
+	// Add foreign key constraint from branches to users (circular dependency resolution)
+	if _, err := db.Exec(`
+		DO $$ 
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.table_constraints 
+				WHERE constraint_name = 'branches_area_manager_id_fkey' 
+				AND table_name = 'branches'
+			) THEN
+				ALTER TABLE branches 
+				ADD CONSTRAINT branches_area_manager_id_fkey 
+				FOREIGN KEY (area_manager_id) REFERENCES users(id);
+			END IF;
+		END $$;
+	`); err != nil {
+		return fmt.Errorf("failed to add branches foreign key: %w", err)
+	}
+
 	// Run data migrations for existing tables
 	if err := runDataMigrations(db); err != nil {
 		return fmt.Errorf("data migration failed: %w", err)
@@ -79,6 +98,84 @@ func RunMigrations(db *sql.DB) error {
 
 	return nil
 }
+
+// addRevenueTypeColumns adds 4 new columns to revenue_data and branch_weekly_revenue tables
+const addRevenueTypeColumns = `
+DO $$ 
+BEGIN
+	-- Add columns to revenue_data table if they don't exist
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'revenue_data' AND column_name = 'skin_revenue'
+	) THEN
+		ALTER TABLE revenue_data ADD COLUMN skin_revenue DECIMAL(15,2) DEFAULT 0;
+	END IF;
+
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'revenue_data' AND column_name = 'ls_hm_revenue'
+	) THEN
+		ALTER TABLE revenue_data ADD COLUMN ls_hm_revenue DECIMAL(15,2) DEFAULT 0;
+	END IF;
+
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'revenue_data' AND column_name = 'vitamin_cases'
+	) THEN
+		ALTER TABLE revenue_data ADD COLUMN vitamin_cases INTEGER DEFAULT 0;
+	END IF;
+
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'revenue_data' AND column_name = 'slim_pen_cases'
+	) THEN
+		ALTER TABLE revenue_data ADD COLUMN slim_pen_cases INTEGER DEFAULT 0;
+	END IF;
+
+	-- Add columns to branch_weekly_revenue table if they don't exist
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'branch_weekly_revenue' AND column_name = 'skin_revenue'
+	) THEN
+		ALTER TABLE branch_weekly_revenue ADD COLUMN skin_revenue DECIMAL(15,2) DEFAULT 0;
+	END IF;
+
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'branch_weekly_revenue' AND column_name = 'ls_hm_revenue'
+	) THEN
+		ALTER TABLE branch_weekly_revenue ADD COLUMN ls_hm_revenue DECIMAL(15,2) DEFAULT 0;
+	END IF;
+
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'branch_weekly_revenue' AND column_name = 'vitamin_cases'
+	) THEN
+		ALTER TABLE branch_weekly_revenue ADD COLUMN vitamin_cases INTEGER DEFAULT 0;
+	END IF;
+
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'branch_weekly_revenue' AND column_name = 'slim_pen_cases'
+	) THEN
+		ALTER TABLE branch_weekly_revenue ADD COLUMN slim_pen_cases INTEGER DEFAULT 0;
+	END IF;
+END $$;
+`
+
+// migrateRevenueDataToSkinRevenue migrates existing expected_revenue to skin_revenue
+const migrateRevenueDataToSkinRevenue = `
+UPDATE revenue_data 
+SET skin_revenue = expected_revenue 
+WHERE expected_revenue > 0 AND (skin_revenue = 0 OR skin_revenue IS NULL);
+`
+
+const migrateBranchWeeklyRevenueToSkinRevenue = `
+UPDATE branch_weekly_revenue 
+SET skin_revenue = expected_revenue 
+WHERE expected_revenue > 0 AND (skin_revenue = 0 OR skin_revenue IS NULL);
+`
+
 
 // runDataMigrations handles migrations for existing data
 func runDataMigrations(db *sql.DB) error {
@@ -312,8 +409,24 @@ func runDataMigrations(db *sql.DB) error {
 			END IF;
 		END $$;
 	`)
+		if err != nil {
+			return fmt.Errorf("failed to update schedule_status constraint: %w", err)
+		}
+
+	// Add position_code column to positions table if it doesn't exist
+	_, err = db.Exec(`
+		DO $$ 
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns 
+				WHERE table_name = 'positions' AND column_name = 'position_code'
+			) THEN
+				ALTER TABLE positions ADD COLUMN position_code VARCHAR(20) UNIQUE;
+			END IF;
+		END $$;
+	`)
 	if err != nil {
-		return fmt.Errorf("failed to update schedule_status constraint: %w", err)
+		return fmt.Errorf("failed to add position_code column: %w", err)
 	}
 
 	// Add display_order column to positions table if it doesn't exist
@@ -384,6 +497,20 @@ func runDataMigrations(db *sql.DB) error {
 		return fmt.Errorf("failed to add min_doctor_assistant column: %w", err)
 	}
 
+	// Add revenue type columns to revenue_data and branch_weekly_revenue tables
+	if _, err := db.Exec(addRevenueTypeColumns); err != nil {
+		return fmt.Errorf("failed to add revenue type columns: %w", err)
+	}
+
+	// Migrate existing expected_revenue to skin_revenue
+	if _, err := db.Exec(migrateRevenueDataToSkinRevenue); err != nil {
+		return fmt.Errorf("failed to migrate revenue_data: %w", err)
+	}
+
+	if _, err := db.Exec(migrateBranchWeeklyRevenueToSkinRevenue); err != nil {
+		return fmt.Errorf("failed to migrate branch_weekly_revenue: %w", err)
+	}
+
 	return nil
 }
 
@@ -414,7 +541,7 @@ CREATE TABLE IF NOT EXISTS branches (
     name VARCHAR(255) NOT NULL,
     code VARCHAR(50) UNIQUE NOT NULL,
     address TEXT,
-    area_manager_id UUID REFERENCES users(id),
+    area_manager_id UUID,  -- Foreign key added later after users table exists
     expected_revenue DECIMAL(15,2) DEFAULT 0,
     priority INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -426,6 +553,7 @@ const createPositionsTable = `
 CREATE TABLE IF NOT EXISTS positions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL,
+    position_code VARCHAR(20) UNIQUE,
     min_staff_per_branch INTEGER DEFAULT 1,
     revenue_multiplier DECIMAL(10,4) DEFAULT 0,
     display_order INTEGER DEFAULT 999,
@@ -566,6 +694,22 @@ CREATE TABLE IF NOT EXISTS rotation_assignments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(rotation_staff_id, branch_id, date)
 );
+`
+
+const createRotationStaffSchedulesTable = `
+CREATE TABLE IF NOT EXISTS rotation_staff_schedules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rotation_staff_id UUID NOT NULL REFERENCES staff(id),
+    date DATE NOT NULL,
+    schedule_status VARCHAR(20) NOT NULL DEFAULT 'off' CHECK (schedule_status IN ('working', 'off', 'leave', 'sick_leave')),
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(rotation_staff_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_rotation_staff_schedules_rotation_staff_id ON rotation_staff_schedules(rotation_staff_id);
+CREATE INDEX IF NOT EXISTS idx_rotation_staff_schedules_date ON rotation_staff_schedules(date);
+CREATE INDEX IF NOT EXISTS idx_rotation_staff_schedules_rotation_staff_date ON rotation_staff_schedules(rotation_staff_id, date);
 `
 
 const createSystemSettingsTable = `

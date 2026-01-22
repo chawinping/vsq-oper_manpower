@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/contexts/UserContext';
 import { positionApi, Position, UpdatePositionRequest } from '@/lib/api/position';
+import PositionAssociationsModal from '@/components/position/PositionAssociationsModal';
 
 export default function PositionsPage() {
   const router = useRouter();
@@ -13,11 +14,15 @@ export default function PositionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<UpdatePositionRequest>({
     name: '',
+    position_code: undefined,
     display_order: 999,
     position_type: 'branch',
     manpower_type: 'อื่นๆ',
   });
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showAssociationsModal, setShowAssociationsModal] = useState(false);
+  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
 
   useEffect(() => {
     // Check if user has permission
@@ -59,6 +64,7 @@ export default function PositionsPage() {
     setEditingId(position.id);
     setEditData({
       name: position.name,
+      position_code: position.position_code,
       display_order: position.display_order,
       position_type: position.position_type,
       manpower_type: position.manpower_type,
@@ -84,10 +90,66 @@ export default function PositionsPage() {
     setEditingId(null);
     setEditData({
       name: '',
+      position_code: undefined,
       display_order: 999,
       position_type: 'branch',
       manpower_type: 'อื่นๆ',
     });
+  };
+
+  const handleDelete = async (position: Position) => {
+    // Check if position has associated staff (frontend check - backend also validates)
+    const totalStaff = (position.branch_staff_count ?? 0) + (position.rotation_staff_count ?? 0);
+    if (totalStaff > 0) {
+      // Show associations modal instead of alert
+      setSelectedPosition(position);
+      setShowAssociationsModal(true);
+      return;
+    }
+
+    // Try to delete - if it fails due to associations, show modal
+    setDeletingId(position.id);
+    try {
+      await positionApi.delete(position.id);
+      await loadPositions();
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || 'Failed to delete position';
+      // If deletion failed due to associations, show the associations modal
+      if (error.response?.status === 409) {
+        setSelectedPosition(position);
+        setShowAssociationsModal(true);
+      } else {
+        alert(errorMessage);
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleAssociationsModalClose = () => {
+    setShowAssociationsModal(false);
+    setSelectedPosition(null);
+  };
+
+  const handleAssociationsDeleted = async () => {
+    // Reload positions after viewing associations
+    await loadPositions();
+    // Note: Quotas are automatically deleted by the backend, so we just need to retry if other associations were removed
+    if (selectedPosition) {
+      try {
+        await positionApi.delete(selectedPosition.id);
+        await loadPositions();
+        setShowAssociationsModal(false);
+        setSelectedPosition(null);
+      } catch (error: any) {
+        // If still has associations, reload the modal to show updated state
+        if (error.response?.status === 409) {
+          // Modal will reload associations automatically
+        } else {
+          alert(error.response?.data?.error || 'Failed to delete position');
+        }
+      }
+    }
   };
 
   if (userLoading || loading) {
@@ -118,6 +180,7 @@ export default function PositionsPage() {
               <tr>
                 <th>Display Order</th>
                 <th>Name</th>
+                <th>Position Code</th>
                 <th>Position Type</th>
                 <th>Manpower Type</th>
                 <th>No. of Staff Allocated - Branch</th>
@@ -151,6 +214,20 @@ export default function PositionsPage() {
                       />
                     ) : (
                       position.name
+                    )}
+                  </td>
+                  <td>
+                    {editingId === position.id ? (
+                      <input
+                        type="text"
+                        value={editData.position_code || ''}
+                        onChange={(e) => setEditData({ ...editData, position_code: e.target.value || undefined })}
+                        className="input-field w-32"
+                        placeholder="e.g., BM, ABM"
+                        maxLength={20}
+                      />
+                    ) : (
+                      <span className="font-mono text-sm">{position.position_code || '-'}</span>
                     )}
                   </td>
                   <td>
@@ -219,12 +296,22 @@ export default function PositionsPage() {
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => handleEdit(position)}
-                        className="text-salesforce-blue hover:text-salesforce-blue-hover text-sm"
-                      >
-                        Edit
-                      </button>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => handleEdit(position)}
+                          className="text-salesforce-blue hover:text-salesforce-blue-hover text-sm"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(position)}
+                          disabled={deletingId === position.id}
+                          className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
+                          title="Delete position"
+                        >
+                          {deletingId === position.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -248,6 +335,17 @@ export default function PositionsPage() {
           <li>• You can use any positive integer for display_order</li>
         </ul>
       </div>
+
+      {/* Position Associations Modal */}
+      {selectedPosition && (
+        <PositionAssociationsModal
+          positionId={selectedPosition.id}
+          positionName={selectedPosition.name}
+          isOpen={showAssociationsModal}
+          onClose={handleAssociationsModalClose}
+          onDeleted={handleAssociationsDeleted}
+        />
+      )}
     </div>
   );
 }

@@ -52,6 +52,7 @@ type Staff struct {
 type Position struct {
 	ID                  uuid.UUID    `json:"id" db:"id"`
 	Name                string       `json:"name" db:"name"`
+	PositionCode       *string      `json:"position_code,omitempty" db:"position_code"` // Unique code for position (e.g., "BM", "ABM", "DA")
 	PositionType        PositionType `json:"position_type" db:"position_type"`
 	ManpowerType        ManpowerType `json:"manpower_type" db:"manpower_type"`
 	MinStaffPerBranch   int          `json:"min_staff_per_branch,omitempty" db:"min_staff_per_branch"`

@@ -83,4 +83,22 @@ export const quotaApi = {
     const response = await apiClient.get(`/quotas/branch/${branchId}/status?${params.toString()}`);
     return response.data.status;
   },
+
+  import: async (file: File): Promise<{
+    message: string;
+    created: number;
+    updated: number;
+    errors?: string[];
+    warning?: string;
+  }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await apiClient.post('/quotas/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
 };

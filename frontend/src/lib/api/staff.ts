@@ -59,7 +59,9 @@ export const staffApi = {
   },
   
   update: async (id: string, data: CreateStaffRequest) => {
+    console.log('staffApi.update called with:', { id, data });
     const response = await apiClient.put(`/staff/${id}`, data);
+    console.log('staffApi.update response:', response.data);
     return response.data.staff as Staff;
   },
   

@@ -106,6 +106,17 @@ func (h *RotationHandler) Assign(c *gin.Context) {
 		return
 	}
 
+	// Check schedule status - cannot assign branch if day is set to "off"
+	schedule, err := h.repos.RotationStaffSchedule.GetByRotationStaffIDAndDate(req.RotationStaffID, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to check schedule status: %v", err)})
+		return
+	}
+	if schedule != nil && schedule.ScheduleStatus == models.ScheduleStatusOff {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot assign branch when schedule status is 'off'. Please set the day to 'working', 'leave', or 'sick_leave' first."})
+		return
+	}
+
 	userIDStr := c.MustGet("user_id").(string)
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
@@ -347,6 +358,17 @@ func (h *RotationHandler) BulkAssign(c *gin.Context) {
 				continue
 			}
 
+			// Check schedule status - cannot assign branch if day is set to "off"
+			schedule, err := h.repos.RotationStaffSchedule.GetByRotationStaffIDAndDate(assignment.RotationStaffID, date)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("Failed to check schedule status for %s on %s: %v", assignment.RotationStaffID, dateStr, err))
+				continue
+			}
+			if schedule != nil && schedule.ScheduleStatus == models.ScheduleStatusOff {
+				errors = append(errors, fmt.Sprintf("Cannot assign branch for %s on %s: schedule status is 'off'", assignment.RotationStaffID, dateStr))
+				continue
+			}
+
 			assignmentModel := &models.RotationAssignment{
 				ID:              uuid.New(),
 				RotationStaffID: assignment.RotationStaffID,
@@ -373,5 +395,199 @@ func (h *RotationHandler) BulkAssign(c *gin.Context) {
 		"assignments": createdAssignments,
 		"errors": errors,
 	})
+}
+
+// Schedule management handlers
+
+type SetScheduleRequest struct {
+	RotationStaffID uuid.UUID            `json:"rotation_staff_id" binding:"required"`
+	Date            string                `json:"date" binding:"required"`
+	ScheduleStatus  models.ScheduleStatus `json:"schedule_status" binding:"required"`
+}
+
+func (h *RotationHandler) SetSchedule(c *gin.Context) {
+	var req SetScheduleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	date, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format"})
+		return
+	}
+
+	// Validate schedule status
+	validStatuses := []models.ScheduleStatus{
+		models.ScheduleStatusWorking,
+		models.ScheduleStatusOff,
+		models.ScheduleStatusLeave,
+		models.ScheduleStatusSickLeave,
+	}
+	isValid := false
+	for _, status := range validStatuses {
+		if req.ScheduleStatus == status {
+			isValid = true
+			break
+		}
+	}
+	if !isValid {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid schedule_status. Must be one of: working, off, leave, sick_leave"})
+		return
+	}
+
+	userIDStr := c.MustGet("user_id").(string)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	schedule := &models.RotationStaffSchedule{
+		ID:              uuid.New(),
+		RotationStaffID: req.RotationStaffID,
+		Date:            date,
+		ScheduleStatus:  req.ScheduleStatus,
+		CreatedBy:       userID,
+	}
+
+	if err := h.repos.RotationStaffSchedule.Create(schedule); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"schedule": schedule})
+}
+
+func (h *RotationHandler) GetSchedules(c *gin.Context) {
+	rotationStaffIDStr := c.Query("rotation_staff_id")
+	startDateStr := c.Query("start_date")
+	endDateStr := c.Query("end_date")
+	dateStr := c.Query("date")
+
+	var schedules []*models.RotationStaffSchedule
+	var err error
+
+	if dateStr != "" {
+		// Get schedules for a specific date
+		date, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format"})
+			return
+		}
+		schedules, err = h.repos.RotationStaffSchedule.GetByDate(date)
+	} else if rotationStaffIDStr != "" && startDateStr != "" && endDateStr != "" {
+		// Get schedules for a specific rotation staff within a date range
+		rotationStaffID, err := uuid.Parse(rotationStaffIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rotation_staff_id"})
+			return
+		}
+		startDate, err := time.Parse("2006-01-02", startDateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start_date format"})
+			return
+		}
+		endDate, err := time.Parse("2006-01-02", endDateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end_date format"})
+			return
+		}
+		schedules, err = h.repos.RotationStaffSchedule.GetByRotationStaffID(rotationStaffID, startDate, endDate)
+	} else if startDateStr != "" && endDateStr != "" {
+		// Get schedules for all rotation staff within a date range
+		startDate, err := time.Parse("2006-01-02", startDateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start_date format"})
+			return
+		}
+		endDate, err := time.Parse("2006-01-02", endDateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end_date format"})
+			return
+		}
+		schedules, err = h.repos.RotationStaffSchedule.GetByDateRange(startDate, endDate)
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Either 'date' or ('start_date', 'end_date') or ('rotation_staff_id', 'start_date', 'end_date') must be provided"})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"schedules": schedules})
+}
+
+func (h *RotationHandler) UpdateSchedule(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req struct {
+		ScheduleStatus models.ScheduleStatus `json:"schedule_status" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate schedule status
+	validStatuses := []models.ScheduleStatus{
+		models.ScheduleStatusWorking,
+		models.ScheduleStatusOff,
+		models.ScheduleStatusLeave,
+		models.ScheduleStatusSickLeave,
+	}
+	isValid := false
+	for _, status := range validStatuses {
+		if req.ScheduleStatus == status {
+			isValid = true
+			break
+		}
+	}
+	if !isValid {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid schedule_status. Must be one of: working, off, leave, sick_leave"})
+		return
+	}
+
+	schedule, err := h.repos.RotationStaffSchedule.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if schedule == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Schedule not found"})
+		return
+	}
+
+	schedule.ScheduleStatus = req.ScheduleStatus
+	if err := h.repos.RotationStaffSchedule.Update(schedule); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"schedule": schedule})
+}
+
+func (h *RotationHandler) DeleteSchedule(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	if err := h.repos.RotationStaffSchedule.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Schedule deleted successfully"})
 }
 

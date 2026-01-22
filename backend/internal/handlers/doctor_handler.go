@@ -25,6 +25,7 @@ func NewDoctorHandler(repos *postgres.Repositories) *DoctorHandler {
 			repos.Position,
 			repos.Branch,
 			repos.Doctor,
+			repos.PositionQuota,
 		),
 	}
 }

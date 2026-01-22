@@ -1,7 +1,7 @@
 services:
   postgres:
     profiles: ["fullstack", "dev", "fullstack-dev", "backend-only", "hybrid-dev"]
-    image: postgres:15-alpine
+    image: postgres:18-alpine
     container_name: vsq-manpower-db
     environment:
       POSTGRES_USER: ${DB_USER:-vsq_user}

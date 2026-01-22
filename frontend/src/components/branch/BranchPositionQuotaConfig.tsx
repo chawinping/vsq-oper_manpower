@@ -244,10 +244,18 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
       const weeklyRevenue = await branchConfigApi.getWeeklyRevenue(branchId);
       const dayRevenue = weeklyRevenue.find((r) => r.day_of_week === dayOfWeek);
       if (dayRevenue) {
-        setDayOfWeekRevenue(dayRevenue.expected_revenue);
+        // Calculate total revenue from all 4 types
+        // Using multipliers: Vitamin Cases * 1000, Slim Pen Cases * 1500
+        const totalRevenue = (dayRevenue.skin_revenue || 0) + 
+                            (dayRevenue.ls_hm_revenue || 0) + 
+                            ((dayRevenue.vitamin_cases || 0) * 1000) + 
+                            ((dayRevenue.slim_pen_cases || 0) * 1500);
+        // Fallback to expected_revenue for backward compatibility
+        const revenueValue = totalRevenue > 0 ? totalRevenue : (dayRevenue.expected_revenue || 0);
+        setDayOfWeekRevenue(revenueValue);
         // Get revenue tier
         try {
-          const tier = await revenueLevelTierApi.getTierForRevenue(dayRevenue.expected_revenue);
+          const tier = await revenueLevelTierApi.getTierForRevenue(revenueValue);
           setRevenueTier(tier);
         } catch (err) {
           console.error('Failed to get revenue tier:', err);

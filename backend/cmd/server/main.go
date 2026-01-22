@@ -35,7 +35,7 @@ func main() {
 	repos := postgres.NewRepositories(db)
 
 	// Initialize handlers
-	h := handlers.NewHandlers(repos, cfg)
+	h := handlers.NewHandlers(repos, cfg, db)
 
 	// Setup Gin router
 	if os.Getenv("GIN_MODE") == "release" {
@@ -115,7 +115,9 @@ func main() {
 			{
 				positions.GET("", h.Position.List)
 				positions.GET("/:id", h.Position.GetByID)
+				positions.GET("/:id/associations", middleware.RequireRole("admin"), h.Position.GetAssociations)
 				positions.PUT("/:id", middleware.RequireRole("admin"), h.Position.Update)
+				positions.DELETE("/:id", middleware.RequireRole("admin"), h.Position.Delete)
 			}
 
 			// Staff management
@@ -137,6 +139,7 @@ func main() {
 				branches.PUT("/:id", middleware.RequireRole("admin", "area_manager", "district_manager"), h.Branch.Update)
 				branches.DELETE("/:id", middleware.RequireRole("admin"), h.Branch.Delete)
 				branches.GET("/:id/revenue", h.Branch.GetRevenue)
+				branches.POST("/revenue/import", middleware.RequireRole("admin", "area_manager", "district_manager"), h.Branch.ImportRevenue)
 				// Branch configuration endpoints (more specific routes first)
 				branches.GET("/:id/config/constraints", middleware.RequireRole("admin", "area_manager", "district_manager"), h.BranchConfig.GetConstraints)
 				branches.PUT("/:id/config/constraints", middleware.RequireRole("admin", "area_manager", "district_manager"), h.BranchConfig.UpdateConstraints)
@@ -166,6 +169,11 @@ func main() {
 				rotation.GET("/suggestions", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.GetSuggestions)
 				rotation.POST("/regenerate-suggestions", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.RegenerateSuggestions)
 				rotation.GET("/eligible-staff/:branchId", middleware.RequireRole("area_manager", "admin"), h.Rotation.GetEligibleStaff)
+				// Schedule management (on/off days)
+				rotation.POST("/schedule", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.SetSchedule)
+				rotation.GET("/schedule", h.Rotation.GetSchedules)
+				rotation.PATCH("/schedule/:id", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.UpdateSchedule)
+				rotation.DELETE("/schedule/:id", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.DeleteSchedule)
 			}
 
 			// Effective branches management
@@ -276,11 +284,12 @@ func main() {
 			// Position quota management
 			quotas := protected.Group("/quotas")
 			{
-				quotas.POST("", middleware.RequireRole("admin", "area_manager"), h.Quota.CreateQuota)
-				quotas.GET("", h.Quota.GetQuotas)
-				quotas.PUT("/:id", middleware.RequireRole("admin", "area_manager"), h.Quota.UpdateQuota)
-				quotas.DELETE("/:id", middleware.RequireRole("admin", "area_manager"), h.Quota.DeleteQuota)
-				quotas.GET("/branch/:branchId/status", h.Quota.GetBranchQuotaStatus)
+			quotas.POST("", middleware.RequireRole("admin", "area_manager"), h.Quota.CreateQuota)
+			quotas.POST("/import", middleware.RequireRole("admin", "area_manager"), h.Quota.Import)
+			quotas.GET("", h.Quota.GetQuotas)
+			quotas.PUT("/:id", middleware.RequireRole("admin", "area_manager"), h.Quota.UpdateQuota)
+			quotas.DELETE("/:id", middleware.RequireRole("admin", "area_manager"), h.Quota.DeleteQuota)
+			quotas.GET("/branch/:branchId/status", h.Quota.GetBranchQuotaStatus)
 			}
 
 			// Overview endpoints
