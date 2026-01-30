@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { branchConfigApi, PositionQuota, PositionQuotaUpdate, BranchConstraints, ConstraintsUpdate } from '@/lib/api/branch-config';
+import { branchConfigApi, PositionQuota, PositionQuotaUpdate, BranchConstraints, ConstraintsUpdate, StaffGroupRequirement } from '@/lib/api/branch-config';
 import { positionApi, Position } from '@/lib/api/position';
 import { staffRequirementScenarioApi, ScenarioMatch, CalculatedRequirement } from '@/lib/api/staff-requirement-scenario';
 import { revenueLevelTierApi, RevenueLevelTier } from '@/lib/api/revenue-level-tier';
+import { branchApi, Branch } from '@/lib/api/branch';
+import { branchTypeApi, BranchType } from '@/lib/api/branch-type';
+import { staffGroupApi, StaffGroup } from '@/lib/api/staff-group';
 
 interface BranchPositionQuotaConfigProps {
   branchId: string;
@@ -29,6 +32,11 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
   const [revenueTier, setRevenueTier] = useState<RevenueLevelTier | null>(null);
   const [doctorCount, setDoctorCount] = useState<number>(0);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [branch, setBranch] = useState<Branch | null>(null);
+  const [branchType, setBranchType] = useState<BranchType | null>(null);
+  const [branchTypes, setBranchTypes] = useState<BranchType[]>([]);
+  const [savingBranchType, setSavingBranchType] = useState(false);
+  const [staffGroups, setStaffGroups] = useState<StaffGroup[]>([]);
 
   // Target positions to configure (using Thai position names)
   const targetPositions = [
@@ -51,11 +59,37 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
     setLoading(true);
     setError(null);
     try {
-      const [positionsData, quotasData, constraintsData] = await Promise.all([
+      const [positionsData, quotasData, constraintsData, branchesData, branchTypesData, staffGroupsData] = await Promise.all([
         positionApi.list(),
         branchConfigApi.getQuotas(branchId),
         branchConfigApi.getConstraints(branchId),
+        branchApi.list(),
+        branchTypeApi.list(),
+        staffGroupApi.list(),
       ]);
+
+      // Filter to only active staff groups
+      setStaffGroups((staffGroupsData || []).filter(group => group.is_active));
+
+      // Set branch types list
+      setBranchTypes(branchTypesData.filter(bt => bt.is_active));
+
+      // Find branch and load branch type if exists
+      const foundBranch = branchesData.find(b => b.id === branchId);
+      if (foundBranch) {
+        setBranch(foundBranch);
+        // Load branch type if branch has one
+        if (foundBranch.branch_type_id) {
+          try {
+            const bt = await branchTypeApi.getById(foundBranch.branch_type_id);
+            setBranchType(bt);
+          } catch (err) {
+            console.error('Failed to load branch type:', err);
+          }
+        } else {
+          setBranchType(null);
+        }
+      }
 
       setPositions(positionsData);
 
@@ -102,11 +136,23 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
           constraintsMap.set(day, {
             branch_id: branchId,
             day_of_week: day,
-            min_front_staff: 0,
-            min_managers: 0,
-            min_doctor_assistant: 0,
-            min_total_staff: 0,
+            is_overridden: false,
+            inherited_from_branch_type_id: branchType?.id,
+            staff_group_requirements: [],
           });
+        } else {
+          // Ensure existing constraints have inheritance fields and staff group requirements
+          const constraint = constraintsMap.get(day)!;
+          if (constraint.is_overridden === undefined) {
+            constraint.is_overridden = false;
+          }
+          if (!constraint.inherited_from_branch_type_id && branchType) {
+            constraint.inherited_from_branch_type_id = branchType.id;
+          }
+          // Ensure staff_group_requirements exists
+          if (!constraint.staff_group_requirements) {
+            constraint.staff_group_requirements = [];
+          }
         }
       }
 
@@ -187,14 +233,104 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
     }
   };
 
-  const handleConstraintChange = (dayOfWeek: number, field: 'min_front_staff' | 'min_managers' | 'min_doctor_assistant' | 'min_total_staff', value: number) => {
+  const handleConstraintChange = (dayOfWeek: number, staffGroupId: string, value: number) => {
     const constraint = constraints.get(dayOfWeek);
     if (!constraint) return;
 
-    const updatedConstraint = { ...constraint };
-    updatedConstraint[field] = value;
+    // Get or create staff group requirements array
+    const staffGroupRequirements = constraint.staff_group_requirements || [];
+    
+    // Find existing requirement for this staff group
+    const existingIndex = staffGroupRequirements.findIndex(
+      req => req.staff_group_id === staffGroupId
+    );
+
+    let updatedRequirements: StaffGroupRequirement[];
+    if (existingIndex >= 0) {
+      // Update existing requirement
+      updatedRequirements = [...staffGroupRequirements];
+      updatedRequirements[existingIndex] = {
+        staff_group_id: staffGroupId,
+        minimum_count: value,
+      };
+    } else {
+      // Add new requirement
+      updatedRequirements = [
+        ...staffGroupRequirements,
+        {
+          staff_group_id: staffGroupId,
+          minimum_count: value,
+        },
+      ];
+    }
+
+    // Remove requirements with 0 count (cleanup)
+    updatedRequirements = updatedRequirements.filter(req => req.minimum_count > 0);
+
+    const updatedConstraint = { 
+      ...constraint,
+      staff_group_requirements: updatedRequirements,
+      is_overridden: true, // Mark as overridden when user changes it
+    };
     setConstraints(new Map(constraints.set(dayOfWeek, updatedConstraint)));
     setError(null);
+  };
+
+  const getConstraintValue = (dayOfWeek: number, staffGroupId: string): number => {
+    const constraint = constraints.get(dayOfWeek);
+    if (!constraint || !constraint.staff_group_requirements) {
+      return 0;
+    }
+    
+    const requirement = constraint.staff_group_requirements.find(
+      req => req.staff_group_id === staffGroupId
+    );
+    
+    return requirement?.minimum_count || 0;
+  };
+
+  const handleResetToDefaults = async () => {
+    if (!branchType) return;
+    
+    if (!confirm('Are you sure you want to reset all constraints to branch type defaults? This will remove all overrides.')) {
+      return;
+    }
+
+    try {
+      // Get branch type constraints
+      const branchTypeConstraints = await branchTypeApi.getConstraints(branchType.id);
+      const constraintsMap = new Map<number, BranchConstraints>();
+
+      // Create constraints from branch type defaults
+      for (let day = 0; day < 7; day++) {
+        const branchTypeConstraint = branchTypeConstraints.find(c => c.day_of_week === day);
+        constraintsMap.set(day, {
+          branch_id: branchId,
+          day_of_week: day,
+          is_overridden: false,
+          inherited_from_branch_type_id: branchType.id,
+          staff_group_requirements: branchTypeConstraint?.staff_group_requirements 
+            ? branchTypeConstraint.staff_group_requirements.map(req => ({
+                staff_group_id: req.staff_group_id,
+                minimum_count: req.minimum_count,
+              }))
+            : [],
+        });
+      }
+
+      setConstraints(constraintsMap);
+      
+      // Save the reset constraints (they will be marked as not overridden)
+      const constraintsToUpdate: ConstraintsUpdate[] = Array.from(constraintsMap.values()).map((constraint) => ({
+        day_of_week: constraint.day_of_week,
+        staff_group_requirements: constraint.staff_group_requirements || [],
+      }));
+
+      await branchConfigApi.updateConstraints(branchId, constraintsToUpdate);
+      setSuccess('Constraints reset to branch type defaults');
+    } catch (error: any) {
+      setError(error.response?.data?.error || 'Failed to reset constraints');
+    }
   };
 
   const handleSaveConstraints = async () => {
@@ -203,12 +339,13 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
     setSuccess(null);
 
     try {
+      // Convert constraints to update format with staff group requirements
       const constraintsToUpdate: ConstraintsUpdate[] = Array.from(constraints.values()).map((constraint) => ({
         day_of_week: constraint.day_of_week,
-        min_front_staff: constraint.min_front_staff,
-        min_managers: constraint.min_managers,
-        min_doctor_assistant: constraint.min_doctor_assistant,
-        min_total_staff: constraint.min_total_staff,
+        staff_group_requirements: (constraint.staff_group_requirements || []).map(req => ({
+          staff_group_id: req.staff_group_id,
+          minimum_count: req.minimum_count,
+        })),
       }));
 
       await branchConfigApi.updateConstraints(branchId, constraintsToUpdate);
@@ -227,6 +364,58 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
     loadData();
     setError(null);
     setSuccess(null);
+  };
+
+  const handleBranchTypeChange = async (branchTypeId: string | null) => {
+    if (!branch) return;
+    
+    setSavingBranchType(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      // Update branch with new branch type
+      const updatedBranch = await branchApi.update(branch.id, {
+        name: branch.name,
+        code: branch.code,
+        area_manager_id: branch.area_manager_id || undefined,
+        branch_type_id: branchTypeId || undefined,
+        priority: branch.priority,
+      });
+
+      // Update local state
+      setBranch(updatedBranch);
+      
+      // Load branch type if assigned
+      if (updatedBranch.branch_type_id) {
+        try {
+          const bt = await branchTypeApi.getById(updatedBranch.branch_type_id);
+          setBranchType(bt);
+        } catch (err) {
+          console.error('Failed to load branch type:', err);
+          setBranchType(null);
+        }
+      } else {
+        setBranchType(null);
+      }
+
+      // Reload constraints since they may have changed due to branch type change
+      const constraintsData = await branchConfigApi.getConstraints(branchId);
+      const constraintsMap = new Map<number, BranchConstraints>();
+      constraintsData.forEach((constraint) => {
+        constraintsMap.set(constraint.day_of_week, constraint);
+      });
+      setConstraints(constraintsMap);
+
+      setSuccess('Branch type updated successfully');
+      if (onSave) {
+        onSave();
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to update branch type');
+    } finally {
+      setSavingBranchType(false);
+    }
   };
 
   const loadScenarioPreview = async () => {
@@ -334,6 +523,48 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
 
   return (
     <div className="space-y-4">
+      {/* Branch Type Assignment Section */}
+      <div className="bg-white p-4 rounded-lg border border-gray-200">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h3 className="text-lg font-semibold">Branch Type Assignment</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Branch type is used as one of the 5 filter criteria (FourthCriteria) for staff allocation
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <label htmlFor="branch-type-select" className="text-sm font-medium text-gray-700">
+            Branch Type:
+          </label>
+          <select
+            id="branch-type-select"
+            value={branchType?.id || ''}
+            onChange={(e) => handleBranchTypeChange(e.target.value || null)}
+            disabled={savingBranchType}
+            className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <option value="">None (No branch type assigned)</option>
+            {branchTypes.map((bt) => (
+              <option key={bt.id} value={bt.id}>
+                {bt.name}
+              </option>
+            ))}
+          </select>
+          {savingBranchType && (
+            <span className="text-sm text-gray-500">Saving...</span>
+          )}
+          {branchType && (
+            <div className="text-sm text-gray-600">
+              <span className="font-medium">Current:</span> {branchType.name}
+              {branchType.description && (
+                <span className="ml-2 text-gray-500">({branchType.description})</span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold">Position Quota Configuration</h3>
         <div className="flex gap-2">
@@ -581,8 +812,26 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
       {/* Constraints Configuration Section */}
       <div className="mt-8">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold">Daily Staff Constraints</h3>
+          <div>
+            <h3 className="text-lg font-semibold">Daily Staff Constraints</h3>
+            {branchType && (
+              <p className="text-sm text-gray-600 mt-1">
+                Inherited from branch type: <span className="font-medium">{branchType.name}</span>
+                {constraints.size > 0 && Array.from(constraints.values()).some(c => c.is_overridden) && (
+                  <span className="ml-2 text-blue-600">(Some constraints are overridden)</span>
+                )}
+              </p>
+            )}
+          </div>
           <div className="flex gap-2">
+            {branchType && Array.from(constraints.values()).some(c => c.is_overridden) && (
+              <button
+                onClick={handleResetToDefaults}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+              >
+                Reset to Defaults
+              </button>
+            )}
             <button
               onClick={handleSaveConstraints}
               disabled={savingConstraints}
@@ -593,92 +842,84 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Day
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Min Front Staff
-                  <span className="block text-xs font-normal text-gray-400 mt-1">(includes managers)</span>
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Min Managers
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Min Doctor Assistant
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Min Total Staff
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {Array.from({ length: 7 }, (_, i) => i).map((dayOfWeek) => {
-                const constraint = constraints.get(dayOfWeek);
-                if (!constraint) return null;
+        {staffGroups.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No active staff groups found. Please create staff groups in Staff Groups settings first.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">
+                    Day
+                  </th>
+                  {branchType && (
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-[120px] bg-gray-50 z-10">
+                      Status
+                    </th>
+                  )}
+                  {staffGroups.map((staffGroup) => (
+                    <th
+                      key={staffGroup.id}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]"
+                    >
+                      Min {staffGroup.name}
+                      {staffGroup.description && (
+                        <span className="block text-xs font-normal text-gray-400 mt-1">
+                          ({staffGroup.description})
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {Array.from({ length: 7 }, (_, i) => i).map((dayOfWeek) => {
+                  const constraint = constraints.get(dayOfWeek);
+                  if (!constraint) return null;
 
-                return (
-                  <tr key={dayOfWeek}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {DAY_NAMES[dayOfWeek]}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={constraint.min_front_staff || ''}
-                        onChange={(e) =>
-                          handleConstraintChange(dayOfWeek, 'min_front_staff', parseInt(e.target.value) || 0)
-                        }
-                        className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={constraint.min_managers || ''}
-                        onChange={(e) =>
-                          handleConstraintChange(dayOfWeek, 'min_managers', parseInt(e.target.value) || 0)
-                        }
-                        className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={constraint.min_doctor_assistant || ''}
-                        onChange={(e) =>
-                          handleConstraintChange(dayOfWeek, 'min_doctor_assistant', parseInt(e.target.value) || 0)
-                        }
-                        className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={constraint.min_total_staff || ''}
-                        onChange={(e) =>
-                          handleConstraintChange(dayOfWeek, 'min_total_staff', parseInt(e.target.value) || 0)
-                        }
-                        className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  const isOverridden = constraint.is_overridden || false;
+
+                  return (
+                    <tr key={dayOfWeek} className={isOverridden ? 'bg-yellow-50' : ''}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white z-10">
+                        {DAY_NAMES[dayOfWeek]}
+                      </td>
+                      {branchType && (
+                        <td className="px-6 py-4 whitespace-nowrap sticky left-[120px] bg-white z-10">
+                          {isOverridden ? (
+                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                              Overridden
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                              Inherited
+                            </span>
+                          )}
+                        </td>
+                      )}
+                      {staffGroups.map((staffGroup) => (
+                        <td key={staffGroup.id} className="px-6 py-4 whitespace-nowrap">
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={getConstraintValue(dayOfWeek, staffGroup.id)}
+                            onChange={(e) =>
+                              handleConstraintChange(dayOfWeek, staffGroup.id, parseInt(e.target.value) || 0)
+                            }
+                            className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,58 +1,37 @@
 import apiClient from './client';
 
-export interface AllocationCriteria {
-  id: string;
-  pillar: 'clinic_wide' | 'doctor_specific' | 'branch_specific';
-  type: 'bookings' | 'revenue' | 'min_staff_position' | 'min_staff_branch' | 'doctor_count';
-  weight: number;
-  is_active: boolean;
-  description?: string;
-  config?: string;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
+// Criterion ID constants
+export const CRITERION_ZEROTH = 'zeroth_criteria';  // Doctor preferences
+export const CRITERION_FIRST = 'first_criteria';    // Branch-level variables
+export const CRITERION_SECOND = 'second_criteria';  // Preferred staff shortage
+export const CRITERION_THIRD = 'third_criteria';    // Minimum staff shortage
+export const CRITERION_FOURTH = 'fourth_criteria';  // Branch type staff groups
 
-export interface CreateAllocationCriteriaRequest {
-  pillar: 'clinic_wide' | 'doctor_specific' | 'branch_specific';
-  type: 'bookings' | 'revenue' | 'min_staff_position' | 'min_staff_branch' | 'doctor_count';
-  weight: number;
-  is_active?: boolean;
-  description?: string;
-  config?: string;
+export type CriterionID = 
+  | typeof CRITERION_ZEROTH
+  | typeof CRITERION_FIRST
+  | typeof CRITERION_SECOND
+  | typeof CRITERION_THIRD
+  | typeof CRITERION_FOURTH;
+
+export interface AllocationCriteriaConfig {
+  priority_order: CriterionID[];  // Array of criterion IDs in priority order (highest to lowest)
+  enable_doctor_preferences: boolean;
 }
 
 export const allocationCriteriaApi = {
-  list: async (filters?: {
-    pillar?: string;
-    type?: string;
-    is_active?: boolean;
-  }): Promise<AllocationCriteria[]> => {
-    const params = new URLSearchParams();
-    if (filters?.pillar) params.append('pillar', filters.pillar);
-    if (filters?.type) params.append('type', filters.type);
-    if (filters?.is_active !== undefined) params.append('is_active', filters.is_active.toString());
-    
-    const response = await apiClient.get(`/allocation-criteria?${params.toString()}`);
-    return response.data.criteria || [];
+  getPriorityOrder: async (): Promise<AllocationCriteriaConfig> => {
+    const response = await apiClient.get('/allocation-criteria/priority-order');
+    return response.data;
   },
 
-  getById: async (id: string): Promise<AllocationCriteria> => {
-    const response = await apiClient.get(`/allocation-criteria/${id}`);
-    return response.data.criteria;
+  updatePriorityOrder: async (config: AllocationCriteriaConfig): Promise<AllocationCriteriaConfig> => {
+    const response = await apiClient.put('/allocation-criteria/priority-order', config);
+    return response.data;
   },
 
-  create: async (data: CreateAllocationCriteriaRequest): Promise<AllocationCriteria> => {
-    const response = await apiClient.post('/allocation-criteria', data);
-    return response.data.criteria;
-  },
-
-  update: async (id: string, data: Partial<CreateAllocationCriteriaRequest>): Promise<AllocationCriteria> => {
-    const response = await apiClient.put(`/allocation-criteria/${id}`, data);
-    return response.data.criteria;
-  },
-
-  delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/allocation-criteria/${id}`);
+  resetPriorityOrder: async (): Promise<AllocationCriteriaConfig> => {
+    const response = await apiClient.post('/allocation-criteria/priority-order/reset');
+    return response.data;
   },
 };

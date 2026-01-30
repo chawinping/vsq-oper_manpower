@@ -44,6 +44,9 @@ func main() {
 
 	r := gin.Default()
 
+	// Request ID middleware (must be first)
+	r.Use(middleware.RequestIDMiddleware())
+
 	// CORS middleware
 	r.Use(middleware.CORS(cfg))
 
@@ -67,6 +70,9 @@ func main() {
 		// Don't set Domain for localhost - browsers handle it automatically
 	})
 	r.Use(sessions.Sessions("vsq_session", store))
+
+	// Error handler middleware (must be last)
+	r.Use(middleware.ErrorHandlerMiddleware())
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
@@ -166,8 +172,6 @@ func main() {
 				rotation.POST("/assign", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.Assign)
 				rotation.POST("/bulk-assign", middleware.RequireRole("area_manager", "admin"), h.Rotation.BulkAssign)
 				rotation.DELETE("/assign/:id", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.RemoveAssignment)
-				rotation.GET("/suggestions", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.GetSuggestions)
-				rotation.POST("/regenerate-suggestions", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.RegenerateSuggestions)
 				rotation.GET("/eligible-staff/:branchId", middleware.RequireRole("area_manager", "admin"), h.Rotation.GetEligibleStaff)
 				// Schedule management (on/off days)
 				rotation.POST("/schedule", middleware.RequireRole("area_manager", "district_manager", "admin"), h.Rotation.SetSchedule)
@@ -180,11 +184,11 @@ func main() {
 			effectiveBranches := protected.Group("/effective-branches")
 			effectiveBranches.Use(middleware.RequireRole("admin", "area_manager", "district_manager"))
 			{
-			effectiveBranches.GET("/rotation-staff/:rotationStaffId", h.EffectiveBranch.GetByRotationStaffID)
-			effectiveBranches.POST("", h.EffectiveBranch.Create)
-			effectiveBranches.PUT("/:id", h.EffectiveBranch.Update)
-			effectiveBranches.DELETE("/:id", h.EffectiveBranch.Delete)
-			effectiveBranches.PUT("/bulk-update", h.EffectiveBranch.BulkUpdate)
+				effectiveBranches.GET("/rotation-staff/:rotationStaffId", h.EffectiveBranch.GetByRotationStaffID)
+				effectiveBranches.POST("", h.EffectiveBranch.Create)
+				effectiveBranches.PUT("/:id", h.EffectiveBranch.Update)
+				effectiveBranches.DELETE("/:id", h.EffectiveBranch.Delete)
+				effectiveBranches.PUT("/bulk-update", h.EffectiveBranch.BulkUpdate)
 			}
 
 			// Areas of Operation management (Master Data)
@@ -226,6 +230,13 @@ func main() {
 				settings.PUT("/:key", middleware.RequireRole("admin"), h.Settings.Update)
 			}
 
+			// Admin test data generation (admin only)
+			admin := protected.Group("/admin")
+			admin.Use(middleware.RequireRole("admin"))
+			{
+				admin.POST("/test-data/generate-schedules", h.TestData.GenerateSchedules)
+			}
+
 			// Dashboard
 			dashboard := protected.Group("/dashboard")
 			{
@@ -239,10 +250,10 @@ func main() {
 				doctors.GET("", middleware.RequireRole("admin", "area_manager"), h.Doctor.List)
 				doctors.POST("", middleware.RequireRole("admin", "area_manager"), h.Doctor.Create)
 				doctors.POST("/import", middleware.RequireRole("admin", "area_manager"), h.Doctor.Import)
-				
+
 				// Doctor Schedule (must be before /:id routes to avoid route conflict)
 				doctors.GET("/:id/schedule", middleware.RequireRole("admin", "area_manager"), h.Doctor.GetMonthlySchedule)
-				
+
 				// Doctor CRUD by ID
 				doctors.GET("/:id", middleware.RequireRole("admin", "area_manager"), h.Doctor.GetByID)
 				doctors.PUT("/:id", middleware.RequireRole("admin", "area_manager"), h.Doctor.Update)
@@ -250,30 +261,30 @@ func main() {
 				doctors.POST("/assignments", middleware.RequireRole("admin", "area_manager", "branch_manager"), h.Doctor.CreateAssignment)
 				doctors.GET("/assignments", h.Doctor.GetAssignments)
 				doctors.DELETE("/assignments/:id", middleware.RequireRole("admin", "area_manager", "branch_manager"), h.Doctor.DeleteAssignment)
-				
+
 				// Doctor Preferences/Rules
 				doctors.GET("/preferences", middleware.RequireRole("admin", "area_manager"), h.Doctor.ListPreferences)
 				doctors.POST("/preferences", middleware.RequireRole("admin", "area_manager"), h.Doctor.CreatePreference)
 				doctors.PUT("/preferences/:id", middleware.RequireRole("admin", "area_manager"), h.Doctor.UpdatePreference)
 				doctors.DELETE("/preferences/:id", middleware.RequireRole("admin", "area_manager"), h.Doctor.DeletePreference)
-				
+
 				// Doctor On/Off Days
 				doctors.POST("/on-off-days", middleware.RequireRole("admin", "branch_manager"), h.Doctor.CreateDoctorOnOffDay)
 				doctors.GET("/on-off-days", h.Doctor.GetDoctorOnOffDays)
 				doctors.DELETE("/on-off-days/:id", middleware.RequireRole("admin", "branch_manager"), h.Doctor.DeleteDoctorOnOffDay)
-				
+
 				// Doctor Default Schedules
 				doctors.POST("/default-schedules", middleware.RequireRole("admin", "area_manager"), h.Doctor.CreateDefaultSchedule)
 				doctors.POST("/default-schedules/import", middleware.RequireRole("admin", "area_manager"), h.Doctor.ImportDefaultSchedules)
 				doctors.GET("/default-schedules", middleware.RequireRole("admin", "area_manager"), h.Doctor.GetDefaultSchedules)
 				doctors.PUT("/default-schedules/:id", middleware.RequireRole("admin", "area_manager"), h.Doctor.UpdateDefaultSchedule)
 				doctors.DELETE("/default-schedules/:id", middleware.RequireRole("admin", "area_manager"), h.Doctor.DeleteDefaultSchedule)
-				
+
 				// Doctor Weekly Off Days
 				doctors.POST("/weekly-off-days", middleware.RequireRole("admin", "area_manager"), h.Doctor.CreateWeeklyOffDay)
 				doctors.GET("/weekly-off-days", middleware.RequireRole("admin", "area_manager"), h.Doctor.GetWeeklyOffDays)
 				doctors.DELETE("/weekly-off-days/:id", middleware.RequireRole("admin", "area_manager"), h.Doctor.DeleteWeeklyOffDay)
-				
+
 				// Doctor Schedule Overrides
 				doctors.POST("/schedule-overrides", middleware.RequireRole("admin", "area_manager"), h.Doctor.CreateScheduleOverride)
 				doctors.GET("/schedule-overrides", middleware.RequireRole("admin", "area_manager"), h.Doctor.GetScheduleOverrides)
@@ -284,12 +295,12 @@ func main() {
 			// Position quota management
 			quotas := protected.Group("/quotas")
 			{
-			quotas.POST("", middleware.RequireRole("admin", "area_manager"), h.Quota.CreateQuota)
-			quotas.POST("/import", middleware.RequireRole("admin", "area_manager"), h.Quota.Import)
-			quotas.GET("", h.Quota.GetQuotas)
-			quotas.PUT("/:id", middleware.RequireRole("admin", "area_manager"), h.Quota.UpdateQuota)
-			quotas.DELETE("/:id", middleware.RequireRole("admin", "area_manager"), h.Quota.DeleteQuota)
-			quotas.GET("/branch/:branchId/status", h.Quota.GetBranchQuotaStatus)
+				quotas.POST("", middleware.RequireRole("admin", "area_manager"), h.Quota.CreateQuota)
+				quotas.POST("/import", middleware.RequireRole("admin", "area_manager"), h.Quota.Import)
+				quotas.GET("", h.Quota.GetQuotas)
+				quotas.PUT("/:id", middleware.RequireRole("admin", "area_manager"), h.Quota.UpdateQuota)
+				quotas.DELETE("/:id", middleware.RequireRole("admin", "area_manager"), h.Quota.DeleteQuota)
+				quotas.GET("/branch/:branchId/status", h.Quota.GetBranchQuotaStatus)
 			}
 
 			// Overview endpoints
@@ -308,15 +319,24 @@ func main() {
 			// 	reports.GET("/:id/export", middleware.RequireRole("admin", "area_manager"), h.Report.ExportReport)
 			// }
 
-			// Allocation criteria management (Admin only)
+			// Allocation criteria management (Admin only) - 5 criteria groups system
 			allocationCriteria := protected.Group("/allocation-criteria")
 			allocationCriteria.Use(middleware.RequireRole("admin"))
 			{
-				allocationCriteria.POST("", h.AllocationCriteria.CreateCriteria)
-				allocationCriteria.GET("", h.AllocationCriteria.GetCriteria)
-				allocationCriteria.GET("/:id", h.AllocationCriteria.GetCriteriaByID)
-				allocationCriteria.PUT("/:id", h.AllocationCriteria.UpdateCriteria)
-				allocationCriteria.DELETE("/:id", h.AllocationCriteria.DeleteCriteria)
+				allocationCriteria.GET("/priority-order", h.AllocationCriteria.GetCriteriaPriorityOrder)
+				allocationCriteria.PUT("/priority-order", h.AllocationCriteria.UpdateCriteriaPriorityOrder)
+				allocationCriteria.POST("/priority-order/reset", h.AllocationCriteria.ResetCriteriaPriorityOrder)
+			}
+
+			// Specific Preferences (one of the 5 filters)
+			specificPreferences := protected.Group("/specific-preferences")
+			specificPreferences.Use(middleware.RequireRole("admin", "area_manager"))
+			{
+				specificPreferences.GET("", h.SpecificPreference.List)
+				specificPreferences.POST("", h.SpecificPreference.Create)
+				specificPreferences.GET("/:id", h.SpecificPreference.GetByID)
+				specificPreferences.PUT("/:id", h.SpecificPreference.Update)
+				specificPreferences.DELETE("/:id", h.SpecificPreference.Delete)
 			}
 
 			// Revenue level tiers management (Admin only)
@@ -341,8 +361,73 @@ func main() {
 				scenarios.PUT("/:id", h.StaffRequirementScenario.Update)
 				scenarios.DELETE("/:id", h.StaffRequirementScenario.Delete)
 				scenarios.PUT("/:id/position-requirements", h.StaffRequirementScenario.UpdatePositionRequirements)
+				scenarios.PUT("/:id/specific-staff-requirements", h.StaffRequirementScenario.UpdateSpecificStaffRequirements)
 				scenarios.POST("/calculate", h.StaffRequirementScenario.CalculateRequirements)
 				scenarios.POST("/match", h.StaffRequirementScenario.GetMatchingScenarios)
+			}
+
+			// Clinic-wide preferences management (Admin only)
+			clinicPreferences := protected.Group("/clinic-preferences")
+			clinicPreferences.Use(middleware.RequireRole("admin"))
+			{
+				clinicPreferences.GET("", h.ClinicWidePreference.List)
+				clinicPreferences.POST("", h.ClinicWidePreference.Create)
+				// Match route must come before :id routes to avoid route conflict
+				clinicPreferences.GET("/match/:criteriaType", h.ClinicWidePreference.GetByCriteriaAndValue)
+				clinicPreferences.GET("/:id", h.ClinicWidePreference.GetByID)
+				clinicPreferences.PUT("/:id", h.ClinicWidePreference.Update)
+				clinicPreferences.DELETE("/:id", h.ClinicWidePreference.Delete)
+				clinicPreferences.POST("/:id/positions", h.ClinicWidePreference.AddPositionRequirement)
+				clinicPreferences.PUT("/:id/positions/:positionId", h.ClinicWidePreference.UpdatePositionRequirement)
+				clinicPreferences.DELETE("/:id/positions/:positionId", h.ClinicWidePreference.DeletePositionRequirement)
+			}
+
+			// Branch types management (Admin only)
+			branchTypes := protected.Group("/branch-types")
+			branchTypes.Use(middleware.RequireRole("admin"))
+			{
+				branchTypes.GET("", h.BranchType.List)
+				branchTypes.POST("", h.BranchType.Create)
+				branchTypes.GET("/:id", h.BranchType.GetByID)
+				branchTypes.PUT("/:id", h.BranchType.Update)
+				branchTypes.DELETE("/:id", h.BranchType.Delete)
+				branchTypes.GET("/:id/requirements", h.BranchTypeRequirement.GetByBranchTypeID)
+				branchTypes.POST("/:id/requirements", h.BranchTypeRequirement.Create)
+				branchTypes.PUT("/:id/requirements/bulk", h.BranchTypeRequirement.BulkUpsert)
+				branchTypes.GET("/:id/constraints", h.BranchTypeConstraints.GetByBranchTypeID)
+				branchTypes.PUT("/:id/constraints", h.BranchTypeConstraints.UpdateConstraints)
+			}
+
+			// Staff groups management (Admin only)
+			staffGroups := protected.Group("/staff-groups")
+			staffGroups.Use(middleware.RequireRole("admin"))
+			{
+				staffGroups.GET("", h.StaffGroup.List)
+				staffGroups.POST("", h.StaffGroup.Create)
+				staffGroups.GET("/:id", h.StaffGroup.GetByID)
+				staffGroups.PUT("/:id", h.StaffGroup.Update)
+				staffGroups.DELETE("/:id", h.StaffGroup.Delete)
+				staffGroups.POST("/:id/positions", h.StaffGroup.AddPosition)
+				staffGroups.DELETE("/:id/positions/:positionId", h.StaffGroup.RemovePosition)
+			}
+
+			// Rotation staff branch position mapping (Admin only)
+			rotationStaffMappings := protected.Group("/rotation-staff-branch-positions")
+			rotationStaffMappings.Use(middleware.RequireRole("admin"))
+			{
+				rotationStaffMappings.GET("", h.RotationStaffBranchPosition.List)
+				rotationStaffMappings.POST("", h.RotationStaffBranchPosition.Create)
+				rotationStaffMappings.GET("/:id", h.RotationStaffBranchPosition.GetByID)
+				rotationStaffMappings.PUT("/:id", h.RotationStaffBranchPosition.Update)
+				rotationStaffMappings.DELETE("/:id", h.RotationStaffBranchPosition.Delete)
+			}
+
+			// Branch type requirements management (Admin only)
+			branchTypeRequirements := protected.Group("/branch-type-requirements")
+			branchTypeRequirements.Use(middleware.RequireRole("admin"))
+			{
+				branchTypeRequirements.PUT("/:id", h.BranchTypeRequirement.Update)
+				branchTypeRequirements.DELETE("/:id", h.BranchTypeRequirement.Delete)
 			}
 		}
 	}
@@ -357,4 +442,3 @@ func main() {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
-

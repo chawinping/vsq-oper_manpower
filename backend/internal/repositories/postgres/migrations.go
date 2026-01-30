@@ -1,4 +1,4 @@
-﻿package postgres
+package postgres
 
 import (
 	"database/sql"
@@ -12,7 +12,7 @@ import (
 func RunMigrations(db *sql.DB) error {
 	migrations := []string{
 		createRolesTable,
-		createBranchesTable,  // Must be before users table (users.branch_id references branches.id)
+		createBranchesTable, // Must be before users table (users.branch_id references branches.id)
 		createUsersTable,
 		createPositionsTable,
 		createAreasOfOperationTable,
@@ -38,18 +38,35 @@ func RunMigrations(db *sql.DB) error {
 		createDoctorDefaultSchedulesTable,
 		createDoctorWeeklyOffDaysTable,
 		createDoctorScheduleOverridesTable,
-		createAllocationSuggestionsTable,
 		createBranchWeeklyRevenueTable,
 		createBranchConstraintsTable,
 		createRevenueLevelTiersTable,
 		createStaffRequirementScenariosTable,
 		createScenarioPositionRequirementsTable,
+		addDoctorAndBranchToStaffRequirementScenarios,
+		createScenarioSpecificStaffRequirementsTable,
 		insertDefaultRoles,
 		insertDefaultPositions,
 		insertDefaultRevenueLevelTiers,
-		insertDefaultStaffRequirementScenarios,
+		dropCheckRevenueCriteriaConstraint,
 		createGetRevenueLevelTierFunction,
 		createScenarioMatchesFunction,
+		createBranchTypesTable,
+		createStaffGroupsTable,
+		createStaffGroupPositionsTable,
+		createBranchTypeStaffGroupRequirementsTable,
+		addDayOfWeekToBranchTypeStaffGroupRequirementsTable,
+		addBranchTypeToBranchesTable,
+		createBranchTypeConstraintsTable,
+		addInheritanceFieldsToBranchConstraintsTable,
+		createBranchTypeConstraintStaffGroupsTable,
+		createBranchConstraintStaffGroupsTable,
+		dropDeprecatedColumnsFromBranchTypeConstraints,
+		createClinicWidePreferencesTable,
+		updateClinicWidePreferencesConstraint,
+		createClinicPreferencePositionRequirementsTable,
+		createSpecificPreferencesTable,
+		createRotationStaffBranchPositionsTable,
 	}
 
 	for _, migration := range migrations {
@@ -175,7 +192,6 @@ UPDATE branch_weekly_revenue
 SET skin_revenue = expected_revenue 
 WHERE expected_revenue > 0 AND (skin_revenue = 0 OR skin_revenue IS NULL);
 `
-
 
 // runDataMigrations handles migrations for existing data
 func runDataMigrations(db *sql.DB) error {
@@ -409,9 +425,9 @@ func runDataMigrations(db *sql.DB) error {
 			END IF;
 		END $$;
 	`)
-		if err != nil {
-			return fmt.Errorf("failed to update schedule_status constraint: %w", err)
-		}
+	if err != nil {
+		return fmt.Errorf("failed to update schedule_status constraint: %w", err)
+	}
 
 	// Add position_code column to positions table if it doesn't exist
 	_, err = db.Exec(`
@@ -874,24 +890,6 @@ CREATE INDEX IF NOT EXISTS idx_doctor_schedule_overrides_date ON doctor_schedule
 CREATE INDEX IF NOT EXISTS idx_doctor_schedule_overrides_branch_id ON doctor_schedule_overrides(branch_id);
 `
 
-const createAllocationSuggestionsTable = `
-CREATE TABLE IF NOT EXISTS allocation_suggestions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    rotation_staff_id UUID NOT NULL REFERENCES staff(id),
-    branch_id UUID NOT NULL REFERENCES branches(id),
-    date DATE NOT NULL,
-    position_id UUID NOT NULL REFERENCES positions(id),
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'modified')),
-    confidence DECIMAL(5,4) NOT NULL DEFAULT 0.0 CHECK (confidence >= 0.0 AND confidence <= 1.0),
-    reason TEXT,
-    criteria_used TEXT, -- JSON array of criteria IDs used
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    reviewed_by UUID REFERENCES users(id),
-    reviewed_at TIMESTAMP,
-    UNIQUE(rotation_staff_id, branch_id, date, position_id)
-);
-`
-
 const insertDefaultRoles = `
 INSERT INTO roles (id, name) VALUES
     ('00000000-0000-0000-0000-000000000001', 'admin'),
@@ -989,12 +987,7 @@ CREATE TABLE IF NOT EXISTS staff_requirement_scenarios (
     is_active BOOLEAN NOT NULL DEFAULT true,
     priority INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT check_revenue_criteria CHECK (
-        revenue_level_tier_id IS NOT NULL OR 
-        min_revenue IS NOT NULL OR 
-        is_default = true
-    )
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_staff_requirement_scenarios_priority ON staff_requirement_scenarios(priority DESC, is_active);
 CREATE INDEX IF NOT EXISTS idx_staff_requirement_scenarios_tier ON staff_requirement_scenarios(revenue_level_tier_id);
@@ -1017,6 +1010,42 @@ CREATE INDEX IF NOT EXISTS idx_scenario_position_requirements_scenario ON scenar
 CREATE INDEX IF NOT EXISTS idx_scenario_position_requirements_position ON scenario_position_requirements(position_id);
 `
 
+const addDoctorAndBranchToStaffRequirementScenarios = `
+DO $$ 
+BEGIN
+	-- Add doctor_id column if it doesn't exist
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'staff_requirement_scenarios' AND column_name = 'doctor_id'
+	) THEN
+		ALTER TABLE staff_requirement_scenarios ADD COLUMN doctor_id UUID REFERENCES doctors(id) ON DELETE SET NULL;
+		CREATE INDEX IF NOT EXISTS idx_staff_requirement_scenarios_doctor ON staff_requirement_scenarios(doctor_id);
+	END IF;
+
+	-- Add branch_id column if it doesn't exist
+	IF NOT EXISTS (
+		SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'staff_requirement_scenarios' AND column_name = 'branch_id'
+	) THEN
+		ALTER TABLE staff_requirement_scenarios ADD COLUMN branch_id UUID REFERENCES branches(id) ON DELETE SET NULL;
+		CREATE INDEX IF NOT EXISTS idx_staff_requirement_scenarios_branch ON staff_requirement_scenarios(branch_id);
+	END IF;
+END $$;
+`
+
+const createScenarioSpecificStaffRequirementsTable = `
+CREATE TABLE IF NOT EXISTS scenario_specific_staff_requirements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    scenario_id UUID NOT NULL REFERENCES staff_requirement_scenarios(id) ON DELETE CASCADE,
+    staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(scenario_id, staff_id)
+);
+CREATE INDEX IF NOT EXISTS idx_scenario_specific_staff_requirements_scenario ON scenario_specific_staff_requirements(scenario_id);
+CREATE INDEX IF NOT EXISTS idx_scenario_specific_staff_requirements_staff ON scenario_specific_staff_requirements(staff_id);
+`
+
 const insertDefaultRevenueLevelTiers = `
 INSERT INTO revenue_level_tiers (id, level_number, level_name, min_revenue, max_revenue, display_order, color_code, description) VALUES
     ('30000000-0000-0000-0000-000000000001', 1, 'Very Low', 0, 100000, 1, '#CCCCCC', 'Low revenue days'),
@@ -1029,10 +1058,17 @@ INSERT INTO revenue_level_tiers (id, level_number, level_name, min_revenue, max_
 ON CONFLICT (level_number) DO NOTHING;
 `
 
-const insertDefaultStaffRequirementScenarios = `
-INSERT INTO staff_requirement_scenarios (id, scenario_name, description, is_default, priority) VALUES
-    ('40000000-0000-0000-0000-000000000001', 'Normal Day', 'Standard staffing for normal operations', true, 0)
-ON CONFLICT DO NOTHING;
+const dropCheckRevenueCriteriaConstraint = `
+DO $$ 
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'check_revenue_criteria' 
+        AND table_name = 'staff_requirement_scenarios'
+    ) THEN
+        ALTER TABLE staff_requirement_scenarios DROP CONSTRAINT check_revenue_criteria;
+    END IF;
+END $$;
 `
 
 // Helper function to get revenue level tier for a given revenue amount
@@ -1129,6 +1165,405 @@ END;
 $$ LANGUAGE plpgsql;
 `
 
+const createBranchTypesTable = `
+CREATE TABLE IF NOT EXISTS branch_types (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_branch_types_name ON branch_types(name);
+CREATE INDEX IF NOT EXISTS idx_branch_types_is_active ON branch_types(is_active);
+`
+
+const createStaffGroupsTable = `
+CREATE TABLE IF NOT EXISTS staff_groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_staff_groups_name ON staff_groups(name);
+CREATE INDEX IF NOT EXISTS idx_staff_groups_is_active ON staff_groups(is_active);
+`
+
+const createStaffGroupPositionsTable = `
+CREATE TABLE IF NOT EXISTS staff_group_positions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    staff_group_id UUID NOT NULL REFERENCES staff_groups(id) ON DELETE CASCADE,
+    position_id UUID NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(staff_group_id, position_id)
+);
+CREATE INDEX IF NOT EXISTS idx_staff_group_positions_group ON staff_group_positions(staff_group_id);
+CREATE INDEX IF NOT EXISTS idx_staff_group_positions_position ON staff_group_positions(position_id);
+`
+
+const createBranchTypeStaffGroupRequirementsTable = `
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_name = 'branch_type_staff_group_requirements'
+    ) THEN
+        CREATE TABLE branch_type_staff_group_requirements (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            branch_type_id UUID NOT NULL REFERENCES branch_types(id) ON DELETE CASCADE,
+            staff_group_id UUID NOT NULL REFERENCES staff_groups(id) ON DELETE CASCADE,
+            day_of_week INTEGER NOT NULL DEFAULT 0 CHECK (day_of_week >= 0 AND day_of_week <= 6),
+            minimum_staff_count INTEGER NOT NULL CHECK (minimum_staff_count >= 0),
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(branch_type_id, staff_group_id, day_of_week)
+        );
+        CREATE INDEX idx_branch_type_requirements_type ON branch_type_staff_group_requirements(branch_type_id);
+        CREATE INDEX idx_branch_type_requirements_group ON branch_type_staff_group_requirements(staff_group_id);
+        CREATE INDEX idx_branch_type_requirements_day ON branch_type_staff_group_requirements(day_of_week);
+    END IF;
+END $$;
+`
+
+const addDayOfWeekToBranchTypeStaffGroupRequirementsTable = `
+DO $$ 
+DECLARE
+    constraint_name_var TEXT;
+BEGIN
+    -- Only proceed if table exists
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_name = 'branch_type_staff_group_requirements'
+    ) THEN
+        -- Add day_of_week column if it doesn't exist
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'branch_type_staff_group_requirements' 
+            AND column_name = 'day_of_week'
+        ) THEN
+            -- Add the column with default value (without NOT NULL first, then set it)
+            ALTER TABLE branch_type_staff_group_requirements 
+            ADD COLUMN day_of_week INTEGER DEFAULT 0;
+            
+            -- Update existing rows to have day_of_week = 0
+            UPDATE branch_type_staff_group_requirements SET day_of_week = 0 WHERE day_of_week IS NULL;
+            
+            -- Now make it NOT NULL
+            ALTER TABLE branch_type_staff_group_requirements 
+            ALTER COLUMN day_of_week SET NOT NULL;
+            
+            -- Add check constraint if it doesn't exist
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.table_constraints 
+                WHERE constraint_name = 'branch_type_staff_group_requirements_day_of_week_check'
+                AND table_name = 'branch_type_staff_group_requirements'
+            ) THEN
+                ALTER TABLE branch_type_staff_group_requirements 
+                ADD CONSTRAINT branch_type_staff_group_requirements_day_of_week_check 
+                CHECK (day_of_week >= 0 AND day_of_week <= 6);
+            END IF;
+            
+            -- Find and drop the old unique constraint on (branch_type_id, staff_group_id) only
+            SELECT tc.constraint_name INTO constraint_name_var
+            FROM information_schema.table_constraints tc
+            WHERE tc.table_name = 'branch_type_staff_group_requirements'
+            AND tc.constraint_type = 'UNIQUE'
+            AND (
+                SELECT COUNT(DISTINCT ccu.column_name)
+                FROM information_schema.constraint_column_usage ccu
+                WHERE ccu.constraint_name = tc.constraint_name
+                AND ccu.table_name = 'branch_type_staff_group_requirements'
+                AND ccu.column_name IN ('branch_type_id', 'staff_group_id')
+            ) = 2
+            AND (
+                SELECT COUNT(DISTINCT ccu.column_name)
+                FROM information_schema.constraint_column_usage ccu
+                WHERE ccu.constraint_name = tc.constraint_name
+                AND ccu.table_name = 'branch_type_staff_group_requirements'
+            ) = 2
+            LIMIT 1;
+            
+            IF constraint_name_var IS NOT NULL THEN
+                EXECUTE 'ALTER TABLE branch_type_staff_group_requirements DROP CONSTRAINT ' || quote_ident(constraint_name_var);
+            END IF;
+            
+            -- Add new unique constraint with day_of_week if it doesn't exist
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.table_constraints 
+                WHERE constraint_name = 'branch_type_staff_group_requirements_branch_type_id_staff_group_id_day_of_week_key'
+                AND table_name = 'branch_type_staff_group_requirements'
+            ) THEN
+                ALTER TABLE branch_type_staff_group_requirements 
+                ADD CONSTRAINT branch_type_staff_group_requirements_branch_type_id_staff_group_id_day_of_week_key 
+                UNIQUE(branch_type_id, staff_group_id, day_of_week);
+            END IF;
+            
+            -- Add index for day_of_week if it doesn't exist
+            CREATE INDEX IF NOT EXISTS idx_branch_type_requirements_day ON branch_type_staff_group_requirements(day_of_week);
+        END IF;
+    END IF;
+END $$;
+`
+
+const addBranchTypeToBranchesTable = `
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'branches' 
+        AND column_name = 'branch_type_id'
+    ) THEN
+        ALTER TABLE branches ADD COLUMN branch_type_id UUID REFERENCES branch_types(id);
+        CREATE INDEX IF NOT EXISTS idx_branches_branch_type_id ON branches(branch_type_id);
+    END IF;
+END $$;
+`
+
+const createBranchTypeConstraintsTable = `
+CREATE TABLE IF NOT EXISTS branch_type_constraints (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_type_id UUID NOT NULL REFERENCES branch_types(id) ON DELETE CASCADE,
+    day_of_week INTEGER NOT NULL CHECK (day_of_week >= 0 AND day_of_week <= 6),
+    min_front_staff INTEGER NOT NULL DEFAULT 0 CHECK (min_front_staff >= 0),
+    min_managers INTEGER NOT NULL DEFAULT 0 CHECK (min_managers >= 0),
+    min_doctor_assistant INTEGER NOT NULL DEFAULT 0 CHECK (min_doctor_assistant >= 0),
+    min_total_staff INTEGER NOT NULL DEFAULT 0 CHECK (min_total_staff >= 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(branch_type_id, day_of_week)
+);
+CREATE INDEX IF NOT EXISTS idx_branch_type_constraints_type ON branch_type_constraints(branch_type_id);
+CREATE INDEX IF NOT EXISTS idx_branch_type_constraints_day ON branch_type_constraints(day_of_week);
+`
+
+const addInheritanceFieldsToBranchConstraintsTable = `
+DO $$ 
+BEGIN
+    -- Add inherited_from_branch_type_id column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'branch_constraints' 
+        AND column_name = 'inherited_from_branch_type_id'
+    ) THEN
+        ALTER TABLE branch_constraints 
+        ADD COLUMN inherited_from_branch_type_id UUID REFERENCES branch_types(id) ON DELETE SET NULL;
+        CREATE INDEX IF NOT EXISTS idx_branch_constraints_inherited_from ON branch_constraints(inherited_from_branch_type_id);
+    END IF;
+
+    -- Add is_overridden column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'branch_constraints' 
+        AND column_name = 'is_overridden'
+    ) THEN
+        ALTER TABLE branch_constraints 
+        ADD COLUMN is_overridden BOOLEAN NOT NULL DEFAULT false;
+        CREATE INDEX IF NOT EXISTS idx_branch_constraints_is_overridden ON branch_constraints(is_overridden);
+    END IF;
+END $$;
+`
+
+const createBranchTypeConstraintStaffGroupsTable = `
+CREATE TABLE IF NOT EXISTS branch_type_constraint_staff_groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_type_constraint_id UUID NOT NULL REFERENCES branch_type_constraints(id) ON DELETE CASCADE,
+    staff_group_id UUID NOT NULL REFERENCES staff_groups(id) ON DELETE CASCADE,
+    minimum_count INTEGER NOT NULL DEFAULT 0 CHECK (minimum_count >= 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(branch_type_constraint_id, staff_group_id)
+);
+CREATE INDEX IF NOT EXISTS idx_branch_type_constraint_staff_groups_constraint ON branch_type_constraint_staff_groups(branch_type_constraint_id);
+CREATE INDEX IF NOT EXISTS idx_branch_type_constraint_staff_groups_staff_group ON branch_type_constraint_staff_groups(staff_group_id);
+CREATE INDEX IF NOT EXISTS idx_branch_type_constraint_staff_groups_composite ON branch_type_constraint_staff_groups(branch_type_constraint_id, staff_group_id);
+`
+
+const createBranchConstraintStaffGroupsTable = `
+CREATE TABLE IF NOT EXISTS branch_constraint_staff_groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_constraint_id UUID NOT NULL REFERENCES branch_constraints(id) ON DELETE CASCADE,
+    staff_group_id UUID NOT NULL REFERENCES staff_groups(id) ON DELETE CASCADE,
+    minimum_count INTEGER NOT NULL DEFAULT 0 CHECK (minimum_count >= 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(branch_constraint_id, staff_group_id)
+);
+CREATE INDEX IF NOT EXISTS idx_branch_constraint_staff_groups_constraint ON branch_constraint_staff_groups(branch_constraint_id);
+CREATE INDEX IF NOT EXISTS idx_branch_constraint_staff_groups_staff_group ON branch_constraint_staff_groups(staff_group_id);
+CREATE INDEX IF NOT EXISTS idx_branch_constraint_staff_groups_composite ON branch_constraint_staff_groups(branch_constraint_id, staff_group_id);
+`
+
+const dropDeprecatedColumnsFromBranchTypeConstraints = `
+DO $$ 
+BEGIN
+    -- Drop deprecated columns from branch_type_constraints if they exist
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'branch_type_constraints' 
+        AND column_name = 'min_front_staff'
+    ) THEN
+        ALTER TABLE branch_type_constraints DROP COLUMN min_front_staff;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'branch_type_constraints' 
+        AND column_name = 'min_managers'
+    ) THEN
+        ALTER TABLE branch_type_constraints DROP COLUMN min_managers;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'branch_type_constraints' 
+        AND column_name = 'min_doctor_assistant'
+    ) THEN
+        ALTER TABLE branch_type_constraints DROP COLUMN min_doctor_assistant;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'branch_type_constraints' 
+        AND column_name = 'min_total_staff'
+    ) THEN
+        ALTER TABLE branch_type_constraints DROP COLUMN min_total_staff;
+    END IF;
+END $$;
+`
+
+const createClinicWidePreferencesTable = `
+-- Create enum type for criteria types
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'clinic_preference_criteria_type') THEN
+        CREATE TYPE clinic_preference_criteria_type AS ENUM (
+            'skin_revenue',
+            'laser_yag_revenue',
+            'iv_cases',
+            'slim_pen_cases',
+            'doctor_count'
+        );
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS clinic_wide_preferences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    criteria_type clinic_preference_criteria_type NOT NULL,
+    criteria_name VARCHAR(100) NOT NULL,
+    min_value DECIMAL(15,2) NOT NULL CHECK (min_value >= 0),
+    max_value DECIMAL(15,2), -- NULL means no upper limit
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Ensure max_value >= min_value if both are set (allows equality for doctor_count)
+    CONSTRAINT check_value_range CHECK (max_value IS NULL OR max_value >= min_value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_clinic_preferences_type ON clinic_wide_preferences(criteria_type, is_active);
+CREATE INDEX IF NOT EXISTS idx_clinic_preferences_range ON clinic_wide_preferences(criteria_type, min_value, max_value);
+CREATE INDEX IF NOT EXISTS idx_clinic_preferences_display_order ON clinic_wide_preferences(criteria_type, display_order);
+`
+
+const updateClinicWidePreferencesConstraint = `
+DO $$ 
+BEGIN
+    -- Drop the old constraint if it exists
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'check_value_range' 
+        AND table_name = 'clinic_wide_preferences'
+    ) THEN
+        ALTER TABLE clinic_wide_preferences DROP CONSTRAINT check_value_range;
+    END IF;
+    
+    -- Add the new constraint that allows equality (for doctor_count)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'check_value_range' 
+        AND table_name = 'clinic_wide_preferences'
+    ) THEN
+        ALTER TABLE clinic_wide_preferences 
+        ADD CONSTRAINT check_value_range 
+        CHECK (max_value IS NULL OR max_value >= min_value);
+    END IF;
+END $$;
+`
+
+const createClinicPreferencePositionRequirementsTable = `
+CREATE TABLE IF NOT EXISTS clinic_preference_position_requirements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    preference_id UUID NOT NULL REFERENCES clinic_wide_preferences(id) ON DELETE CASCADE,
+    position_id UUID NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    minimum_staff INTEGER NOT NULL CHECK (minimum_staff >= 0),
+    preferred_staff INTEGER NOT NULL CHECK (preferred_staff >= minimum_staff),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- One requirement per position per preference
+    CONSTRAINT unique_position_per_preference UNIQUE (preference_id, position_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_preference_position_req ON clinic_preference_position_requirements(preference_id, position_id);
+CREATE INDEX IF NOT EXISTS idx_preference_position_req_position ON clinic_preference_position_requirements(position_id);
+CREATE INDEX IF NOT EXISTS idx_preference_position_req_active ON clinic_preference_position_requirements(preference_id, is_active);
+`
+
+const createSpecificPreferencesTable = `
+CREATE TABLE IF NOT EXISTS specific_preferences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_id UUID REFERENCES branches(id) ON DELETE CASCADE,
+    doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
+    day_of_week INTEGER CHECK (day_of_week >= 0 AND day_of_week <= 6),
+    preference_type VARCHAR(50) NOT NULL CHECK (preference_type IN ('position_count', 'staff_name')),
+    position_id UUID REFERENCES positions(id) ON DELETE CASCADE,
+    staff_count INTEGER CHECK (staff_count >= 1),
+    staff_id UUID REFERENCES staff(id) ON DELETE CASCADE,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- Ensure position_count has position_id and staff_count
+    CONSTRAINT chk_position_count CHECK (
+        (preference_type = 'position_count' AND position_id IS NOT NULL AND staff_count IS NOT NULL AND staff_id IS NULL) OR
+        (preference_type != 'position_count')
+    ),
+    -- Ensure staff_name has staff_id
+    CONSTRAINT chk_staff_name CHECK (
+        (preference_type = 'staff_name' AND staff_id IS NOT NULL AND position_id IS NULL AND staff_count IS NULL) OR
+        (preference_type != 'staff_name')
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_specific_preferences_branch_id ON specific_preferences(branch_id);
+CREATE INDEX IF NOT EXISTS idx_specific_preferences_doctor_id ON specific_preferences(doctor_id);
+CREATE INDEX IF NOT EXISTS idx_specific_preferences_day_of_week ON specific_preferences(day_of_week);
+CREATE INDEX IF NOT EXISTS idx_specific_preferences_is_active ON specific_preferences(is_active);
+CREATE INDEX IF NOT EXISTS idx_specific_preferences_composite ON specific_preferences(branch_id, doctor_id, day_of_week, is_active);
+`
+
+const createRotationStaffBranchPositionsTable = `
+CREATE TABLE IF NOT EXISTS rotation_staff_branch_positions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rotation_staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+    branch_position_id UUID NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    substitution_level INTEGER NOT NULL DEFAULT 2 CHECK (substitution_level BETWEEN 1 AND 3),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(rotation_staff_id, branch_position_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rotation_staff_branch_positions_staff ON rotation_staff_branch_positions(rotation_staff_id) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_rotation_staff_branch_positions_position ON rotation_staff_branch_positions(branch_position_id) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_rotation_staff_branch_positions_composite ON rotation_staff_branch_positions(rotation_staff_id, branch_position_id) WHERE is_active = true;
+`
+
 // SeedStandardBranches seeds the database with standard branch codes.
 // This ensures all standard branch codes (FR-BM-03) are always available in the system.
 func SeedStandardBranches(db *sql.DB) error {
@@ -1136,34 +1571,34 @@ func SeedStandardBranches(db *sql.DB) error {
 	// Using a base UUID pattern: 20000000-0000-0000-0000-XXXXXXXXXXXX
 	// where X is a sequential hex number
 	baseUUID := uuid.MustParse("20000000-0000-0000-0000-000000000000")
-	
+
 	standardCodes := constants.GetStandardBranchCodes()
-	
+
 	// Prepare the insert statement
 	stmt := `INSERT INTO branches (id, name, code, priority) 
 	         VALUES ($1, $2, $3, $4)
 	         ON CONFLICT (code) DO NOTHING`
-	
+
 	for _, code := range standardCodes {
 		// Generate deterministic UUID for this branch code using SHA1 hash
 		// This ensures the same branch code always gets the same UUID
 		branchID := uuid.NewSHA1(baseUUID, []byte(code))
-		
+
 		// Branch name defaults to code if not specified
 		branchName := code
-		
+
 		// Insert branch with default values
 		_, err := db.Exec(stmt,
 			branchID,
 			branchName,
 			code,
-			0,  // priority - default 0
+			0, // priority - default 0
 		)
 		if err != nil {
 			return fmt.Errorf("failed to seed branch %s: %w", code, err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1228,4 +1663,3 @@ func linkBranchManagersToBranches(db *sql.DB) error {
 
 	return rows.Err()
 }
-

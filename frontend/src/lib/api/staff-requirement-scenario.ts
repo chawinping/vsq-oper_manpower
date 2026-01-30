@@ -21,10 +21,39 @@ export interface ScenarioPositionRequirementCreate {
   override_base: boolean;
 }
 
+export interface ScenarioSpecificStaffRequirement {
+  id: string;
+  scenario_id: string;
+  staff_id: string;
+  staff?: {
+    id: string;
+    name: string;
+    nickname: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScenarioSpecificStaffRequirementCreate {
+  staff_id: string;
+}
+
 export interface StaffRequirementScenario {
   id: string;
   scenario_name: string;
   description: string | null;
+  doctor_id: string | null;
+  doctor?: {
+    id: string;
+    name: string;
+    code: string | null;
+  };
+  branch_id: string | null;
+  branch?: {
+    id: string;
+    name: string;
+    code: string;
+  };
   revenue_level_tier_id: string | null;
   revenue_level_tier?: RevenueLevelTier;
   min_revenue: number | null;
@@ -40,11 +69,14 @@ export interface StaffRequirementScenario {
   created_at: string;
   updated_at: string;
   position_requirements?: ScenarioPositionRequirement[];
+  specific_staff_requirements?: ScenarioSpecificStaffRequirement[];
 }
 
 export interface StaffRequirementScenarioCreate {
   scenario_name: string;
   description?: string | null;
+  doctor_id?: string | null;
+  branch_id?: string | null;
   revenue_level_tier_id?: string | null;
   min_revenue?: number | null;
   max_revenue?: number | null;
@@ -57,11 +89,14 @@ export interface StaffRequirementScenarioCreate {
   is_active?: boolean;
   priority?: number;
   position_requirements?: ScenarioPositionRequirementCreate[];
+  specific_staff_requirements?: ScenarioSpecificStaffRequirementCreate[];
 }
 
 export interface StaffRequirementScenarioUpdate {
   scenario_name?: string;
   description?: string | null;
+  doctor_id?: string | null;
+  branch_id?: string | null;
   revenue_level_tier_id?: string | null;
   min_revenue?: number | null;
   max_revenue?: number | null;
@@ -124,6 +159,13 @@ export const staffRequirementScenarioApi = {
 
   updatePositionRequirements: async (id: string, requirements: ScenarioPositionRequirementCreate[]) => {
     const response = await apiClient.put(`/staff-requirement-scenarios/${id}/position-requirements`, {
+      requirements,
+    });
+    return response.data;
+  },
+
+  updateSpecificStaffRequirements: async (id: string, requirements: ScenarioSpecificStaffRequirementCreate[]) => {
+    const response = await apiClient.put(`/staff-requirement-scenarios/${id}/specific-staff-requirements`, {
       requirements,
     });
     return response.data;

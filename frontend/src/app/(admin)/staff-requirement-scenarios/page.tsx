@@ -6,22 +6,29 @@ import {
   StaffRequirementScenario,
   StaffRequirementScenarioCreate,
   ScenarioPositionRequirementCreate,
+  ScenarioSpecificStaffRequirementCreate,
 } from '@/lib/api/staff-requirement-scenario';
-import { revenueLevelTierApi, RevenueLevelTier } from '@/lib/api/revenue-level-tier';
 import { positionApi, Position } from '@/lib/api/position';
+import { doctorApi, Doctor } from '@/lib/api/doctor';
+import { branchApi, Branch } from '@/lib/api/branch';
+import { staffApi, Staff } from '@/lib/api/staff';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function StaffRequirementScenariosPage() {
   const [scenarios, setScenarios] = useState<StaffRequirementScenario[]>([]);
-  const [tiers, setTiers] = useState<RevenueLevelTier[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<StaffRequirementScenarioCreate>({
     scenario_name: '',
     description: '',
+    doctor_id: null,
+    branch_id: null,
     revenue_level_tier_id: null,
     min_revenue: null,
     max_revenue: null,
@@ -34,6 +41,7 @@ export default function StaffRequirementScenariosPage() {
     is_active: true,
     priority: 0,
     position_requirements: [],
+    specific_staff_requirements: [],
   });
 
   useEffect(() => {
@@ -43,14 +51,18 @@ export default function StaffRequirementScenariosPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [scenariosData, tiersData, positionsData] = await Promise.all([
+      const [scenariosData, positionsData, doctorsData, branchesData, staffData] = await Promise.all([
         staffRequirementScenarioApi.list(),
-        revenueLevelTierApi.list(),
         positionApi.list(),
+        doctorApi.list(),
+        branchApi.list(),
+        staffApi.list({}),
       ]);
       setScenarios(scenariosData.sort((a, b) => b.priority - a.priority || a.scenario_name.localeCompare(b.scenario_name)));
-      setTiers(tiersData.sort((a, b) => a.level_number - b.level_number));
       setPositions(positionsData);
+      setDoctors(doctorsData.sort((a, b) => a.name.localeCompare(b.name)));
+      setBranches(branchesData.sort((a, b) => a.name.localeCompare(b.name)));
+      setStaff(staffData.sort((a, b) => a.name.localeCompare(b.name)));
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -61,10 +73,18 @@ export default function StaffRequirementScenariosPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Convert "none" string to null for doctor_id and branch_id
+      // Always set is_default to false (no default scenarios allowed)
+      const submitData = {
+        ...formData,
+        doctor_id: formData.doctor_id === 'none' ? null : formData.doctor_id || null,
+        branch_id: formData.branch_id === 'none' ? null : formData.branch_id || null,
+        is_default: false,
+      };
       if (editingId) {
-        await staffRequirementScenarioApi.update(editingId, formData);
+        await staffRequirementScenarioApi.update(editingId, submitData);
       } else {
-        await staffRequirementScenarioApi.create(formData);
+        await staffRequirementScenarioApi.create(submitData);
       }
       await loadData();
       resetForm();
@@ -78,6 +98,8 @@ export default function StaffRequirementScenariosPage() {
     setFormData({
       scenario_name: scenario.scenario_name,
       description: scenario.description || '',
+      doctor_id: scenario.doctor_id,
+      branch_id: scenario.branch_id,
       revenue_level_tier_id: scenario.revenue_level_tier_id,
       min_revenue: scenario.min_revenue,
       max_revenue: scenario.max_revenue,
@@ -86,7 +108,7 @@ export default function StaffRequirementScenariosPage() {
       doctor_count: scenario.doctor_count,
       min_doctor_count: scenario.min_doctor_count,
       day_of_week: scenario.day_of_week,
-      is_default: scenario.is_default,
+      is_default: false,
       is_active: scenario.is_active,
       priority: scenario.priority,
       position_requirements: (scenario.position_requirements || []).map((req) => ({
@@ -94,6 +116,9 @@ export default function StaffRequirementScenariosPage() {
         preferred_staff: req.preferred_staff,
         minimum_staff: req.minimum_staff,
         override_base: req.override_base,
+      })),
+      specific_staff_requirements: (scenario.specific_staff_requirements || []).map((req) => ({
+        staff_id: req.staff_id,
       })),
     });
     setShowForm(true);
@@ -142,6 +167,8 @@ export default function StaffRequirementScenariosPage() {
     setFormData({
       scenario_name: '',
       description: '',
+      doctor_id: null,
+      branch_id: null,
       revenue_level_tier_id: null,
       min_revenue: null,
       max_revenue: null,
@@ -154,7 +181,32 @@ export default function StaffRequirementScenariosPage() {
       is_active: true,
       priority: 0,
       position_requirements: [],
+      specific_staff_requirements: [],
     });
+  };
+
+  const addSpecificStaffRequirement = () => {
+    setFormData({
+      ...formData,
+      specific_staff_requirements: [
+        ...(formData.specific_staff_requirements || []),
+        {
+          staff_id: staff[0]?.id || '',
+        },
+      ],
+    });
+  };
+
+  const updateSpecificStaffRequirement = (index: number, field: keyof ScenarioSpecificStaffRequirementCreate, value: any) => {
+    const updated = [...(formData.specific_staff_requirements || [])];
+    updated[index] = { ...updated[index], [field]: value };
+    setFormData({ ...formData, specific_staff_requirements: updated });
+  };
+
+  const removeSpecificStaffRequirement = (index: number) => {
+    const updated = [...(formData.specific_staff_requirements || [])];
+    updated.splice(index, 1);
+    setFormData({ ...formData, specific_staff_requirements: updated });
   };
 
   if (loading) {
@@ -213,136 +265,43 @@ export default function StaffRequirementScenariosPage() {
             </div>
 
             <div className="border-t pt-4">
-              <h3 className="font-semibold mb-2">Revenue Matching</h3>
-              <div className="space-y-2">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    checked={formData.revenue_level_tier_id !== null}
-                    onChange={() => setFormData({ ...formData, revenue_level_tier_id: tiers[0]?.id || null, min_revenue: null, max_revenue: null })}
-                    className="mr-2"
-                  />
-                  Use Revenue Level Tier
-                </label>
-                {formData.revenue_level_tier_id !== null && (
-                  <select
-                    value={formData.revenue_level_tier_id || ''}
-                    onChange={(e) => setFormData({ ...formData, revenue_level_tier_id: e.target.value || null })}
-                    className="w-full px-3 py-2 border rounded-md"
-                  >
-                    <option value="">Select Tier</option>
-                    {tiers.map((tier) => (
-                      <option key={tier.id} value={tier.id}>
-                        Level {tier.level_number}: {tier.level_name} ({tier.min_revenue.toLocaleString()} - {tier.max_revenue ? tier.max_revenue.toLocaleString() : '∞'} THB)
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <label className="flex items-center mt-4">
-                  <input
-                    type="radio"
-                    checked={formData.revenue_level_tier_id === null && (formData.min_revenue !== null || formData.max_revenue !== null)}
-                    onChange={() => setFormData({ ...formData, revenue_level_tier_id: null, min_revenue: 0, max_revenue: null })}
-                    className="mr-2"
-                  />
-                  Use Direct Revenue Range
-                </label>
-                {formData.revenue_level_tier_id === null && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="number"
-                      placeholder="Min Revenue"
-                      value={formData.min_revenue || ''}
-                      onChange={(e) => setFormData({ ...formData, min_revenue: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="px-3 py-2 border rounded-md"
-                    />
-                    <input
-                      type="number"
-                      placeholder="Max Revenue"
-                      value={formData.max_revenue || ''}
-                      onChange={(e) => setFormData({ ...formData, max_revenue: e.target.value ? parseFloat(e.target.value) : null })}
-                      className="px-3 py-2 border rounded-md"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 space-y-2">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={formData.use_day_of_week_revenue}
-                    onChange={(e) => setFormData({ ...formData, use_day_of_week_revenue: e.target.checked })}
-                    className="mr-2"
-                  />
-                  Use Day-of-Week Revenue (from branch_weekly_revenue)
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={formData.use_specific_date_revenue}
-                    onChange={(e) => setFormData({ ...formData, use_specific_date_revenue: e.target.checked })}
-                    className="mr-2"
-                  />
-                  Use Specific Date Revenue (from revenue_data, overrides DoW)
-                </label>
-              </div>
+              <h3 className="font-semibold mb-2">Doctor Filter (Optional)</h3>
+              <select
+                value={formData.doctor_id || ''}
+                onChange={(e) => setFormData({ ...formData, doctor_id: e.target.value || null })}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="">Any Doctor</option>
+                <option value="none">None (No Doctor)</option>
+                {doctors.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id}>
+                    {doctor.name} {doctor.code ? `(${doctor.code})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="border-t pt-4">
-              <h3 className="font-semibold mb-2">Doctor Count Matching</h3>
-              <div className="space-y-2">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    checked={formData.doctor_count === null && formData.min_doctor_count === null}
-                    onChange={() => setFormData({ ...formData, doctor_count: null, min_doctor_count: null })}
-                    className="mr-2"
-                  />
-                  Any doctor count
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    checked={formData.doctor_count !== null}
-                    onChange={() => setFormData({ ...formData, doctor_count: 2, min_doctor_count: null })}
-                    className="mr-2"
-                  />
-                  Exact count:
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.doctor_count || ''}
-                    onChange={(e) => setFormData({ ...formData, doctor_count: e.target.value ? parseInt(e.target.value) : null, min_doctor_count: null })}
-                    className="ml-2 w-20 px-2 py-1 border rounded-md"
-                    disabled={formData.doctor_count === null}
-                  />
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    checked={formData.min_doctor_count !== null}
-                    onChange={() => setFormData({ ...formData, min_doctor_count: 2, doctor_count: null })}
-                    className="mr-2"
-                  />
-                  Minimum count:
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.min_doctor_count || ''}
-                    onChange={(e) => setFormData({ ...formData, min_doctor_count: e.target.value ? parseInt(e.target.value) : null, doctor_count: null })}
-                    className="ml-2 w-20 px-2 py-1 border rounded-md"
-                    disabled={formData.min_doctor_count === null}
-                  />
-                </label>
-              </div>
+              <h3 className="font-semibold mb-2">Branch Filter (Optional)</h3>
+              <select
+                value={formData.branch_id || ''}
+                onChange={(e) => setFormData({ ...formData, branch_id: e.target.value || null })}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="">Any Branch</option>
+                <option value="none">None (No Branch)</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name} ({branch.code})
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="border-t pt-4">
               <h3 className="font-semibold mb-2">Day of Week Filter (Optional)</h3>
               <select
-                value={formData.day_of_week !== null ? formData.day_of_week.toString() : ''}
+                value={formData.day_of_week != null ? formData.day_of_week.toString() : ''}
                 onChange={(e) => setFormData({ ...formData, day_of_week: e.target.value ? parseInt(e.target.value) : null })}
                 className="w-full px-3 py-2 border rounded-md"
               >
@@ -415,6 +374,43 @@ export default function StaffRequirementScenariosPage() {
               </button>
             </div>
 
+            <div className="border-t pt-4">
+              <h3 className="font-semibold mb-2">Specific Staff Requirements</h3>
+              <p className="text-sm text-gray-600 mb-2">Select specific staff members that must be assigned</p>
+              {(formData.specific_staff_requirements || []).map((req, index) => (
+                <div key={index} className="mb-2 p-3 border rounded-md">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={req.staff_id}
+                      onChange={(e) => updateSpecificStaffRequirement(index, 'staff_id', e.target.value)}
+                      className="flex-1 px-2 py-1 border rounded-md"
+                    >
+                      <option value="">Select Staff</option>
+                      {staff.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} {s.nickname ? `(${s.nickname})` : ''} - {s.position?.name || 'Unknown Position'}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => removeSpecificStaffRequirement(index)}
+                      className="px-3 py-1 text-sm text-red-600 hover:text-red-800 border border-red-300 rounded-md hover:bg-red-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addSpecificStaffRequirement}
+                className="mt-2 px-3 py-1 text-sm bg-gray-200 rounded-md hover:bg-gray-300"
+              >
+                + Add Specific Staff Requirement
+              </button>
+            </div>
+
             <div className="border-t pt-4 flex gap-2">
               <label className="flex items-center">
                 <input
@@ -424,15 +420,6 @@ export default function StaffRequirementScenariosPage() {
                   className="mr-2"
                 />
                 Active
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={formData.is_default}
-                  onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
-                  className="mr-2"
-                />
-                Default
               </label>
             </div>
 
@@ -469,23 +456,23 @@ export default function StaffRequirementScenariosPage() {
           <tbody className="bg-white divide-y divide-gray-200">
             {scenarios.map((scenario) => {
               const conditions = [];
-              if (scenario.revenue_level_tier_id) {
-                const tier = tiers.find((t) => t.id === scenario.revenue_level_tier_id);
-                if (tier) conditions.push(`Tier ${tier.level_number}`);
+              if (scenario.doctor_id) {
+                const doctor = doctors.find((d) => d.id === scenario.doctor_id);
+                if (doctor) conditions.push(`Doctor: ${doctor.name}`);
               }
-              if (scenario.min_revenue !== null || scenario.max_revenue !== null) {
-                const minFormatted = scenario.min_revenue ? scenario.min_revenue.toLocaleString('en-US') : '0';
-                const maxFormatted = scenario.max_revenue ? scenario.max_revenue.toLocaleString('en-US') : '∞';
-                conditions.push(`Rev: ${minFormatted}-${maxFormatted}`);
+              if (scenario.branch_id) {
+                const branch = branches.find((b) => b.id === scenario.branch_id);
+                if (branch) conditions.push(`Branch: ${branch.name}`);
               }
-              if (scenario.doctor_count !== null) conditions.push(`Doctors=${scenario.doctor_count}`);
-              if (scenario.min_doctor_count !== null) conditions.push(`Doctors>=${scenario.min_doctor_count}`);
               if (scenario.day_of_week !== null) conditions.push(DAY_NAMES[scenario.day_of_week]);
+              if (scenario.specific_staff_requirements && scenario.specific_staff_requirements.length > 0) {
+                conditions.push(`${scenario.specific_staff_requirements.length} specific staff`);
+              }
 
               return (
                 <tr key={scenario.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{scenario.scenario_name}</td>
-                  <td className="px-6 py-4 text-sm">{conditions.join(', ') || 'Default'}</td>
+                  <td className="px-6 py-4 text-sm">{conditions.join(', ') || 'No conditions'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">{scenario.priority}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     {scenario.is_active ? (
@@ -493,7 +480,6 @@ export default function StaffRequirementScenariosPage() {
                     ) : (
                       <span className="text-gray-400">Inactive</span>
                     )}
-                    {scenario.is_default && <span className="ml-2 text-blue-600">(Default)</span>}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     <button

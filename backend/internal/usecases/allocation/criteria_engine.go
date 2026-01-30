@@ -4,32 +4,38 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"vsq-oper-manpower/backend/internal/domain/interfaces"
 	"vsq-oper-manpower/backend/internal/domain/models"
+
+	"github.com/google/uuid"
 )
 
 // RepositoriesWrapper wraps postgres repositories to provide a unified interface
+// RepositoriesWrapper wraps repository interfaces for use cases
 type RepositoriesWrapper struct {
-	User                interfaces.UserRepository
-	Role                interfaces.RoleRepository
-	Staff               interfaces.StaffRepository
-	Position            interfaces.PositionRepository
-	Branch              interfaces.BranchRepository
-	EffectiveBranch     interfaces.EffectiveBranchRepository
-	Revenue             interfaces.RevenueRepository
-	Schedule            interfaces.ScheduleRepository
-	Rotation            interfaces.RotationRepository
-	Settings            interfaces.SettingsRepository
-	AllocationRule      interfaces.AllocationRuleRepository
-	AreaOfOperation     interfaces.AreaOfOperationRepository
-	AllocationCriteria  interfaces.AllocationCriteriaRepository
-	PositionQuota       interfaces.PositionQuotaRepository
-	Doctor              interfaces.DoctorRepository
-	DoctorPreference    interfaces.DoctorPreferenceRepository
-	DoctorAssignment    interfaces.DoctorAssignmentRepository
-	DoctorOnOffDay      interfaces.DoctorOnOffDayRepository
-	AllocationSuggestion interfaces.AllocationSuggestionRepository
+	User                  interfaces.UserRepository
+	Role                  interfaces.RoleRepository
+	Staff                 interfaces.StaffRepository
+	Position              interfaces.PositionRepository
+	Branch                interfaces.BranchRepository
+	EffectiveBranch       interfaces.EffectiveBranchRepository
+	Revenue               interfaces.RevenueRepository
+	Schedule              interfaces.ScheduleRepository
+	Rotation              interfaces.RotationRepository
+	Settings              interfaces.SettingsRepository
+	AllocationRule        interfaces.AllocationRuleRepository
+	AreaOfOperation       interfaces.AreaOfOperationRepository
+	AllocationCriteria    interfaces.AllocationCriteriaRepository
+	PositionQuota         interfaces.PositionQuotaRepository
+	Doctor                interfaces.DoctorRepository
+	DoctorPreference      interfaces.DoctorPreferenceRepository
+	DoctorAssignment      interfaces.DoctorAssignmentRepository
+	DoctorOnOffDay        interfaces.DoctorOnOffDayRepository
+	BranchType            interfaces.BranchTypeRepository
+	StaffGroup            interfaces.StaffGroupRepository
+	StaffGroupPosition    interfaces.StaffGroupPositionRepository
+	BranchTypeRequirement interfaces.BranchTypeStaffGroupRequirementRepository
+	RotationStaffBranchPosition interfaces.RotationStaffBranchPositionRepository
 }
 
 // CriteriaEngine evaluates allocation criteria across the three pillars
@@ -61,11 +67,11 @@ type PillarScore struct {
 
 // AllocationScore represents the overall allocation score
 type AllocationScore struct {
-	ClinicWideScore    float64
+	ClinicWideScore     float64
 	DoctorSpecificScore float64
 	BranchSpecificScore float64
-	OverallScore       float64 // Weighted combination of all pillars
-	PillarScores      []PillarScore
+	OverallScore        float64 // Weighted combination of all pillars
+	PillarScores        []PillarScore
 }
 
 // EvaluateCriteria evaluates allocation criteria for a branch on a specific date
@@ -198,7 +204,7 @@ func (e *CriteriaEngine) evaluateRevenue(criteria *models.AllocationCriteria, br
 
 	if len(revenueData) > 0 {
 		revenueRecord := revenueData[0]
-		
+
 		// Check revenue source
 		if revenueRecord.RevenueSource == "doctor" {
 			// Calculate revenue from doctor assignments
@@ -206,7 +212,7 @@ func (e *CriteriaEngine) evaluateRevenue(criteria *models.AllocationCriteria, br
 			if err != nil {
 				return 0.0, fmt.Errorf("failed to get doctor assignments: %w", err)
 			}
-			
+
 			revenue = 0.0
 			for _, assignment := range doctorAssignments {
 				revenue += assignment.ExpectedRevenue

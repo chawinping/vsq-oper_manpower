@@ -6,26 +6,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"vsq-oper-manpower/backend/internal/config"
 	"vsq-oper-manpower/backend/internal/domain/interfaces"
 	"vsq-oper-manpower/backend/internal/domain/models"
 	"vsq-oper-manpower/backend/internal/repositories/postgres"
 	"vsq-oper-manpower/backend/internal/usecases/allocation"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type RotationHandler struct {
-	repos            *postgres.Repositories
-	cfg              *config.Config
-	suggestionEngine *allocation.SuggestionEngine
+	repos               *postgres.Repositories
+	cfg                 *config.Config
+	multiCriteriaFilter *allocation.MultiCriteriaFilter
 }
 
-func NewRotationHandler(repos *postgres.Repositories, cfg *config.Config, suggestionEngine *allocation.SuggestionEngine) *RotationHandler {
+func NewRotationHandler(repos *postgres.Repositories, cfg *config.Config, multiCriteriaFilter *allocation.MultiCriteriaFilter) *RotationHandler {
 	return &RotationHandler{
-		repos:            repos,
-		cfg:              cfg,
-		suggestionEngine: suggestionEngine,
+		repos:               repos,
+		cfg:                 cfg,
+		multiCriteriaFilter: multiCriteriaFilter,
 	}
 }
 
@@ -160,105 +161,9 @@ func (h *RotationHandler) RemoveAssignment(c *gin.Context) {
 }
 
 type SuggestionsRequest struct {
-	BranchID   string `json:"branch_id"`
-	StartDate  string `json:"start_date"`
-	EndDate    string `json:"end_date"`
-}
-
-func (h *RotationHandler) GetSuggestions(c *gin.Context) {
-	branchIDStr := c.Query("branch_id")
-	startDateStr := c.Query("start_date")
-	endDateStr := c.Query("end_date")
-
-	// Parse dates
-	var startDate, endDate time.Time
-	var err error
-	if startDateStr != "" && endDateStr != "" {
-		startDate, err = time.Parse("2006-01-02", startDateStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start_date format"})
-			return
-		}
-		endDate, err = time.Parse("2006-01-02", endDateStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end_date format"})
-			return
-		}
-	} else {
-		// Default to current month
-		now := time.Now()
-		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-		endDate = startDate.AddDate(0, 1, -1)
-	}
-
-	// Get branches to suggest for
-	var branchIDs []uuid.UUID
-	if branchIDStr != "" {
-		branchID, err := uuid.Parse(branchIDStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid branch_id"})
-			return
-		}
-		branch, err := h.repos.Branch.GetByID(branchID)
-		if err != nil || branch == nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Branch not found"})
-			return
-		}
-		branchIDs = []uuid.UUID{branchID}
-	} else {
-		allBranches, err := h.repos.Branch.List()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		branchIDs = make([]uuid.UUID, len(allBranches))
-		for i, branch := range allBranches {
-			branchIDs[i] = branch.ID
-		}
-	}
-
-	// Use SuggestionEngine to generate suggestions based on three pillars criteria
-	suggestions, err := h.suggestionEngine.GenerateSuggestions(branchIDs, startDate, endDate)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to generate suggestions: %v", err)})
-		return
-	}
-
-	// Convert suggestions to response format
-	response := make([]gin.H, 0)
-	for _, suggestion := range suggestions {
-		// Get assignment level from effective branch
-		assignmentLevel := 2 // Default to Level 2
-		effectiveBranches, err := h.repos.EffectiveBranch.GetByBranchID(suggestion.BranchID)
-		if err == nil {
-			for _, eb := range effectiveBranches {
-				if eb.RotationStaffID == suggestion.RotationStaffID {
-					assignmentLevel = eb.Level
-					break
-				}
-			}
-		}
-
-		response = append(response, gin.H{
-			"id":                suggestion.ID,
-			"rotation_staff_id": suggestion.RotationStaffID,
-			"branch_id":         suggestion.BranchID,
-			"date":              suggestion.Date.Format("2006-01-02"),
-			"position_id":       suggestion.PositionID,
-			"assignment_level":  assignmentLevel,
-			"confidence":        suggestion.Confidence,
-			"reason":            suggestion.Reason,
-			"status":            suggestion.Status,
-		})
-	}
-
-	c.JSON(http.StatusOK, gin.H{"suggestions": response})
-}
-
-func (h *RotationHandler) RegenerateSuggestions(c *gin.Context) {
-	// Regenerate is the same as GetSuggestions for now
-	// In production, this would request new suggestions from MCP
-	h.GetSuggestions(c)
+	BranchID  string `json:"branch_id"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
 }
 
 // GetEligibleStaff returns rotation staff eligible for a specific branch
@@ -321,7 +226,7 @@ func (h *RotationHandler) GetEligibleStaff(c *gin.Context) {
 type BulkAssignRequest struct {
 	Assignments []struct {
 		RotationStaffID uuid.UUID `json:"rotation_staff_id" binding:"required"`
-		Dates            []string  `json:"dates" binding:"required"`
+		Dates           []string  `json:"dates" binding:"required"`
 		AssignmentLevel int       `json:"assignment_level" binding:"required"`
 	} `json:"assignments" binding:"required"`
 	BranchID uuid.UUID `json:"branch_id" binding:"required"`
@@ -391,16 +296,16 @@ func (h *RotationHandler) BulkAssign(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"created": len(createdAssignments),
+		"created":     len(createdAssignments),
 		"assignments": createdAssignments,
-		"errors": errors,
+		"errors":      errors,
 	})
 }
 
 // Schedule management handlers
 
 type SetScheduleRequest struct {
-	RotationStaffID uuid.UUID            `json:"rotation_staff_id" binding:"required"`
+	RotationStaffID uuid.UUID             `json:"rotation_staff_id" binding:"required"`
 	Date            string                `json:"date" binding:"required"`
 	ScheduleStatus  models.ScheduleStatus `json:"schedule_status" binding:"required"`
 }

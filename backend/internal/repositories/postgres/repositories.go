@@ -6,76 +6,95 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
 	"vsq-oper-manpower/backend/internal/domain/interfaces"
 	"vsq-oper-manpower/backend/internal/domain/models"
 	"vsq-oper-manpower/backend/internal/usecases/doctor"
+
+	"github.com/google/uuid"
 )
 
 type Repositories struct {
-	User                interfaces.UserRepository
-	Role                interfaces.RoleRepository
-	Staff               interfaces.StaffRepository
-	Position            interfaces.PositionRepository
-	Branch              interfaces.BranchRepository
-	EffectiveBranch     interfaces.EffectiveBranchRepository
-	Revenue             interfaces.RevenueRepository
-	Schedule            interfaces.ScheduleRepository
-	Rotation            interfaces.RotationRepository
-	RotationStaffSchedule interfaces.RotationStaffScheduleRepository
-	Settings            interfaces.SettingsRepository
-	AllocationRule      interfaces.AllocationRuleRepository
-		AreaOfOperation     interfaces.AreaOfOperationRepository
-		Zone                interfaces.ZoneRepository
-	AllocationCriteria  interfaces.AllocationCriteriaRepository
-	PositionQuota       interfaces.PositionQuotaRepository
-	Doctor              interfaces.DoctorRepository
-	DoctorPreference    interfaces.DoctorPreferenceRepository
-	DoctorAssignment    interfaces.DoctorAssignmentRepository
-	DoctorOnOffDay      interfaces.DoctorOnOffDayRepository
-	DoctorDefaultSchedule interfaces.DoctorDefaultScheduleRepository
-	DoctorWeeklyOffDay   interfaces.DoctorWeeklyOffDayRepository
-	DoctorScheduleOverride interfaces.DoctorScheduleOverrideRepository
-	AllocationSuggestion interfaces.AllocationSuggestionRepository
-	BranchWeeklyRevenue  interfaces.BranchWeeklyRevenueRepository
-	BranchConstraints    interfaces.BranchConstraintsRepository
-	RevenueLevelTier     interfaces.RevenueLevelTierRepository
-	StaffRequirementScenario interfaces.StaffRequirementScenarioRepository
-	ScenarioPositionRequirement interfaces.ScenarioPositionRequirementRepository
+	User                        interfaces.UserRepository
+	Role                        interfaces.RoleRepository
+	Staff                       interfaces.StaffRepository
+	Position                    interfaces.PositionRepository
+	Branch                      interfaces.BranchRepository
+	EffectiveBranch             interfaces.EffectiveBranchRepository
+	Revenue                     interfaces.RevenueRepository
+	Schedule                    interfaces.ScheduleRepository
+	Rotation                    interfaces.RotationRepository
+	RotationStaffSchedule       interfaces.RotationStaffScheduleRepository
+	Settings                    interfaces.SettingsRepository
+	AllocationRule              interfaces.AllocationRuleRepository
+	AreaOfOperation             interfaces.AreaOfOperationRepository
+	Zone                        interfaces.ZoneRepository
+	AllocationCriteria          interfaces.AllocationCriteriaRepository
+	PositionQuota               interfaces.PositionQuotaRepository
+	Doctor                      interfaces.DoctorRepository
+	DoctorPreference            interfaces.DoctorPreferenceRepository
+	DoctorAssignment            interfaces.DoctorAssignmentRepository
+	DoctorOnOffDay              interfaces.DoctorOnOffDayRepository
+	DoctorDefaultSchedule       interfaces.DoctorDefaultScheduleRepository
+	DoctorWeeklyOffDay          interfaces.DoctorWeeklyOffDayRepository
+	DoctorScheduleOverride      interfaces.DoctorScheduleOverrideRepository
+	BranchWeeklyRevenue         interfaces.BranchWeeklyRevenueRepository
+	BranchConstraints           interfaces.BranchConstraintsRepository
+	RevenueLevelTier            interfaces.RevenueLevelTierRepository
+	StaffRequirementScenario           interfaces.StaffRequirementScenarioRepository
+	ScenarioPositionRequirement        interfaces.ScenarioPositionRequirementRepository
+	ScenarioSpecificStaffRequirement   interfaces.ScenarioSpecificStaffRequirementRepository
+	BranchType                         interfaces.BranchTypeRepository
+	StaffGroup                  interfaces.StaffGroupRepository
+	StaffGroupPosition          interfaces.StaffGroupPositionRepository
+	BranchTypeRequirement       interfaces.BranchTypeStaffGroupRequirementRepository
+	BranchTypeConstraints       interfaces.BranchTypeConstraintsRepository
+	SpecificPreference         interfaces.SpecificPreferenceRepository
+	ClinicWidePreference       interfaces.ClinicWidePreferenceRepository
+	PreferencePositionRequirement interfaces.PreferencePositionRequirementRepository
+	RotationStaffBranchPosition interfaces.RotationStaffBranchPositionRepository
 }
 
 func NewRepositories(db *sql.DB) *Repositories {
 	repos := &Repositories{
-		User:                 NewUserRepository(db),
-		Role:                 NewRoleRepository(db),
-		Staff:                NewStaffRepository(db),
-		Position:             NewPositionRepository(db),
-		Branch:               NewBranchRepository(db),
-		EffectiveBranch:      NewEffectiveBranchRepository(db),
-		Revenue:              NewRevenueRepository(db),
-		Schedule:             NewScheduleRepository(db),
-		Rotation:             NewRotationRepository(db),
-		RotationStaffSchedule: NewRotationStaffScheduleRepository(db),
-		Settings:             NewSettingsRepository(db),
-		AllocationRule:       NewAllocationRuleRepository(db),
-		AreaOfOperation:      NewAreaOfOperationRepository(db),
-		Zone:                  NewZoneRepository(db),
-		AllocationCriteria:   NewAllocationCriteriaRepository(db),
-		PositionQuota:        NewPositionQuotaRepository(db),
-		Doctor:               NewDoctorRepository(db),
-		DoctorPreference:     NewDoctorPreferenceRepository(db),
-		DoctorOnOffDay:       NewDoctorOnOffDayRepository(db),
-		DoctorDefaultSchedule: NewDoctorDefaultScheduleRepository(db),
-		DoctorWeeklyOffDay:   NewDoctorWeeklyOffDayRepository(db),
-		DoctorScheduleOverride: NewDoctorScheduleOverrideRepository(db),
-		AllocationSuggestion: NewAllocationSuggestionRepository(db),
-		BranchWeeklyRevenue:  NewBranchWeeklyRevenueRepository(db),
-		BranchConstraints:    NewBranchConstraintsRepository(db),
-		RevenueLevelTier:     NewRevenueLevelTierRepository(db),
-		StaffRequirementScenario: NewStaffRequirementScenarioRepository(db),
-		ScenarioPositionRequirement: NewScenarioPositionRequirementRepository(db),
+		User:                        NewUserRepository(db),
+		Role:                        NewRoleRepository(db),
+		Staff:                       NewStaffRepository(db),
+		Position:                    NewPositionRepository(db),
+		Branch:                      NewBranchRepository(db),
+		EffectiveBranch:             NewEffectiveBranchRepository(db),
+		Revenue:                     NewRevenueRepository(db),
+		Schedule:                    NewScheduleRepository(db),
+		Rotation:                    NewRotationRepository(db),
+		RotationStaffSchedule:       NewRotationStaffScheduleRepository(db),
+		Settings:                    NewSettingsRepository(db),
+		AllocationRule:              NewAllocationRuleRepository(db),
+		AreaOfOperation:             NewAreaOfOperationRepository(db),
+		Zone:                        NewZoneRepository(db),
+		AllocationCriteria:          NewAllocationCriteriaRepository(db),
+		PositionQuota:               NewPositionQuotaRepository(db),
+		Doctor:                      NewDoctorRepository(db),
+		DoctorPreference:            NewDoctorPreferenceRepository(db),
+		DoctorOnOffDay:              NewDoctorOnOffDayRepository(db),
+		DoctorDefaultSchedule:       NewDoctorDefaultScheduleRepository(db),
+		DoctorWeeklyOffDay:          NewDoctorWeeklyOffDayRepository(db),
+		DoctorScheduleOverride:      NewDoctorScheduleOverrideRepository(db),
+		BranchWeeklyRevenue:         NewBranchWeeklyRevenueRepository(db),
+		BranchConstraints:           NewBranchConstraintsRepository(db),
+		RevenueLevelTier:            NewRevenueLevelTierRepository(db),
+		StaffRequirementScenario:         NewStaffRequirementScenarioRepository(db),
+		ScenarioPositionRequirement:      NewScenarioPositionRequirementRepository(db),
+		ScenarioSpecificStaffRequirement:  NewScenarioSpecificStaffRequirementRepository(db),
+		BranchType:                       NewBranchTypeRepository(db),
+		StaffGroup:                  NewStaffGroupRepository(db),
+		StaffGroupPosition:          NewStaffGroupPositionRepository(db),
+		BranchTypeRequirement:       NewBranchTypeStaffGroupRequirementRepository(db),
+		BranchTypeConstraints:       NewBranchTypeConstraintsRepository(db),
+		SpecificPreference:         NewSpecificPreferenceRepository(db),
+		ClinicWidePreference:       NewClinicWidePreferenceRepository(db),
+		PreferencePositionRequirement: NewPreferencePositionRequirementRepository(db),
+		RotationStaffBranchPosition: NewRotationStaffBranchPositionRepository(db),
 	}
-	
+
 	// DoctorAssignment needs schedule repositories, so create it after them
 	repos.DoctorAssignment = NewDoctorAssignmentRepository(
 		db,
@@ -84,7 +103,7 @@ func NewRepositories(db *sql.DB) *Repositories {
 		repos.DoctorScheduleOverride,
 		repos.Doctor,
 	)
-	
+
 	return repos
 }
 
@@ -300,7 +319,7 @@ func (r *staffRepository) GetByID(id uuid.UUID) (*models.Staff, error) {
 		bID, _ := uuid.Parse(branchID.String)
 		staff.BranchID = &bID
 	}
-	
+
 	// Load branches if this is rotation staff
 	if staff.StaffType == models.StaffTypeRotation {
 		branches, err := r.GetBranches(id)
@@ -308,7 +327,7 @@ func (r *staffRepository) GetByID(id uuid.UUID) (*models.Staff, error) {
 			staff.Branches = branches
 		}
 	}
-	
+
 	return staff, nil
 }
 
@@ -332,7 +351,7 @@ func (r *staffRepository) GetBranches(staffID uuid.UUID) ([]*models.Branch, erro
 	          INNER JOIN staff_branches sb ON b.id = sb.branch_id
 	          WHERE sb.staff_id = $1
 	          ORDER BY b.name`
-	
+
 	rows, err := r.db.Query(query, staffID)
 	if err != nil {
 		return nil, err
@@ -450,7 +469,7 @@ func (r *staffRepository) List(filters interfaces.StaffFilters) ([]*models.Staff
 			zID, _ := uuid.Parse(zoneID.String)
 			staff.ZoneID = &zID
 		}
-		
+
 		// Load branches if this is rotation staff
 		if staff.StaffType == models.StaffTypeRotation {
 			branches, err := r.GetBranches(staff.ID)
@@ -458,7 +477,7 @@ func (r *staffRepository) List(filters interfaces.StaffFilters) ([]*models.Staff
 				staff.Branches = branches
 			}
 		}
-		
+
 		staffList = append(staffList, staff)
 	}
 	return staffList, rows.Err()
@@ -523,15 +542,13 @@ func (r *positionRepository) HasAssociatedStaff(id uuid.UUID) (bool, error) {
 	// 1. staff (position_id)
 	// 2. position_quotas (position_id)
 	// 3. staff_allocation_rules (position_id)
-	// 4. allocation_suggestions (position_id)
-	// 5. scenario_position_requirements (position_id)
-	
+	// 4. scenario_position_requirements (position_id)
+
 	query := `
 		SELECT 
 			(SELECT COUNT(*) FROM staff WHERE position_id = $1) +
 			(SELECT COUNT(*) FROM position_quotas WHERE position_id = $1) +
 			(SELECT COUNT(*) FROM staff_allocation_rules WHERE position_id = $1) +
-			(SELECT COUNT(*) FROM allocation_suggestions WHERE position_id = $1) +
 			(SELECT COUNT(*) FROM scenario_position_requirements WHERE position_id = $1) as total_count
 	`
 	var count int
@@ -594,21 +611,22 @@ func NewBranchRepository(db *sql.DB) interfaces.BranchRepository {
 }
 
 func (r *branchRepository) Create(branch *models.Branch) error {
-	query := `INSERT INTO branches (id, name, code, area_manager_id, priority) 
-	          VALUES ($1, $2, $3, $4, $5) RETURNING created_at, updated_at`
+	query := `INSERT INTO branches (id, name, code, area_manager_id, branch_type_id, priority) 
+	          VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at, updated_at`
 	return r.db.QueryRow(query, branch.ID, branch.Name, branch.Code,
-		branch.AreaManagerID, branch.Priority).
+		branch.AreaManagerID, branch.BranchTypeID, branch.Priority).
 		Scan(&branch.CreatedAt, &branch.UpdatedAt)
 }
 
 func (r *branchRepository) GetByID(id uuid.UUID) (*models.Branch, error) {
 	branch := &models.Branch{}
-	query := `SELECT id, name, code, area_manager_id, priority, created_at, updated_at 
+	query := `SELECT id, name, code, area_manager_id, branch_type_id, priority, created_at, updated_at 
 	          FROM branches WHERE id = $1`
 	var areaManagerID sql.NullString
+	var branchTypeID sql.NullString
 	err := r.db.QueryRow(query, id).Scan(
 		&branch.ID, &branch.Name, &branch.Code,
-		&areaManagerID, &branch.Priority,
+		&areaManagerID, &branchTypeID, &branch.Priority,
 		&branch.CreatedAt, &branch.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -621,14 +639,18 @@ func (r *branchRepository) GetByID(id uuid.UUID) (*models.Branch, error) {
 		amID, _ := uuid.Parse(areaManagerID.String)
 		branch.AreaManagerID = &amID
 	}
+	if branchTypeID.Valid {
+		btID, _ := uuid.Parse(branchTypeID.String)
+		branch.BranchTypeID = &btID
+	}
 	return branch, nil
 }
 
 func (r *branchRepository) Update(branch *models.Branch) error {
-	query := `UPDATE branches SET name = $1, code = $2, area_manager_id = $3, 
-	          priority = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5`
+	query := `UPDATE branches SET name = $1, code = $2, area_manager_id = $3, branch_type_id = $4,
+	          priority = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6`
 	_, err := r.db.Exec(query, branch.Name, branch.Code,
-		branch.AreaManagerID, branch.Priority, branch.ID)
+		branch.AreaManagerID, branch.BranchTypeID, branch.Priority, branch.ID)
 	return err
 }
 
@@ -639,8 +661,13 @@ func (r *branchRepository) Delete(id uuid.UUID) error {
 }
 
 func (r *branchRepository) List() ([]*models.Branch, error) {
-	query := `SELECT id, name, code, area_manager_id, priority, created_at, updated_at 
-	          FROM branches ORDER BY code`
+	query := `SELECT 
+	          b.id, b.name, b.code, b.area_manager_id, b.branch_type_id, b.priority, b.created_at, b.updated_at,
+	          bt.id as branch_type_id_full, bt.name as branch_type_name, bt.description as branch_type_description, 
+	          bt.is_active as branch_type_is_active, bt.created_at as branch_type_created_at, bt.updated_at as branch_type_updated_at
+	          FROM branches b
+	          LEFT JOIN branch_types bt ON b.branch_type_id = bt.id
+	          ORDER BY b.code`
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -651,10 +678,19 @@ func (r *branchRepository) List() ([]*models.Branch, error) {
 	for rows.Next() {
 		branch := &models.Branch{}
 		var areaManagerID sql.NullString
+		var branchTypeID sql.NullString
+		var branchTypeIDFull sql.NullString
+		var branchTypeName sql.NullString
+		var branchTypeDescription sql.NullString
+		var branchTypeIsActive sql.NullBool
+		var branchTypeCreatedAt sql.NullTime
+		var branchTypeUpdatedAt sql.NullTime
 		if err := rows.Scan(
 			&branch.ID, &branch.Name, &branch.Code,
-			&areaManagerID, &branch.Priority,
+			&areaManagerID, &branchTypeID, &branch.Priority,
 			&branch.CreatedAt, &branch.UpdatedAt,
+			&branchTypeIDFull, &branchTypeName, &branchTypeDescription,
+			&branchTypeIsActive, &branchTypeCreatedAt, &branchTypeUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -662,13 +698,33 @@ func (r *branchRepository) List() ([]*models.Branch, error) {
 			amID, _ := uuid.Parse(areaManagerID.String)
 			branch.AreaManagerID = &amID
 		}
+		if branchTypeID.Valid {
+			btID, _ := uuid.Parse(branchTypeID.String)
+			branch.BranchTypeID = &btID
+		}
+		if branchTypeIDFull.Valid && branchTypeName.Valid {
+			btID, _ := uuid.Parse(branchTypeIDFull.String)
+			branchType := &models.BranchType{
+				ID:          btID,
+				Name:        branchTypeName.String,
+				Description: branchTypeDescription.String,
+				IsActive:    branchTypeIsActive.Bool,
+			}
+			if branchTypeCreatedAt.Valid {
+				branchType.CreatedAt = branchTypeCreatedAt.Time
+			}
+			if branchTypeUpdatedAt.Valid {
+				branchType.UpdatedAt = branchTypeUpdatedAt.Time
+			}
+			branch.BranchType = branchType
+		}
 		branches = append(branches, branch)
 	}
 	return branches, rows.Err()
 }
 
 func (r *branchRepository) GetByAreaManagerID(areaManagerID uuid.UUID) ([]*models.Branch, error) {
-	query := `SELECT id, name, code, area_manager_id, priority, created_at, updated_at 
+	query := `SELECT id, name, code, area_manager_id, branch_type_id, priority, created_at, updated_at 
 	          FROM branches WHERE area_manager_id = $1 ORDER BY code`
 	rows, err := r.db.Query(query, areaManagerID)
 	if err != nil {
@@ -680,9 +736,10 @@ func (r *branchRepository) GetByAreaManagerID(areaManagerID uuid.UUID) ([]*model
 	for rows.Next() {
 		branch := &models.Branch{}
 		var areaManagerID sql.NullString
+		var branchTypeID sql.NullString
 		if err := rows.Scan(
 			&branch.ID, &branch.Name, &branch.Code,
-			&areaManagerID, &branch.Priority,
+			&areaManagerID, &branchTypeID, &branch.Priority,
 			&branch.CreatedAt, &branch.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -690,6 +747,10 @@ func (r *branchRepository) GetByAreaManagerID(areaManagerID uuid.UUID) ([]*model
 		if areaManagerID.Valid {
 			amID, _ := uuid.Parse(areaManagerID.String)
 			branch.AreaManagerID = &amID
+		}
+		if branchTypeID.Valid {
+			btID, _ := uuid.Parse(branchTypeID.String)
+			branch.BranchTypeID = &btID
 		}
 		branches = append(branches, branch)
 	}
@@ -993,7 +1054,7 @@ func (r *revenueRepository) BulkCreateOrUpdate(revenues []*models.RevenueData) e
 		if revenueSource == "" {
 			revenueSource = "excel" // Default for imports
 		}
-		
+
 		if revenue.ID == uuid.Nil {
 			revenue.ID = uuid.New()
 		}
@@ -1014,7 +1075,7 @@ func (r *revenueRepository) BulkCreateOrUpdate(revenues []*models.RevenueData) e
 			revenueSource,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to insert/update revenue for branch %s on date %s: %w", 
+			return fmt.Errorf("failed to insert/update revenue for branch %s on date %s: %w",
 				revenue.BranchID, dateOnly.Format("2006-01-02"), err)
 		}
 	}
@@ -1046,7 +1107,7 @@ func (r *scheduleRepository) Create(schedule *models.StaffSchedule) error {
 	}
 	// Update is_working_day for backward compatibility
 	schedule.IsWorkingDay = (schedule.ScheduleStatus == models.ScheduleStatusWorking)
-	
+
 	// Use UPSERT (ON CONFLICT DO UPDATE) to handle both create and update
 	// If schedule already exists (staff_id, branch_id, date), update it instead of failing
 	query := `INSERT INTO staff_schedules (id, staff_id, branch_id, date, schedule_status, is_working_day, created_by) 
@@ -1147,7 +1208,7 @@ func (r *scheduleRepository) Update(schedule *models.StaffSchedule) error {
 	}
 	// Update is_working_day for backward compatibility
 	schedule.IsWorkingDay = (schedule.ScheduleStatus == models.ScheduleStatusWorking)
-	
+
 	query := `UPDATE staff_schedules SET schedule_status = $1, is_working_day = $2 WHERE id = $3`
 	_, err := r.db.Exec(query, schedule.ScheduleStatus, schedule.IsWorkingDay, schedule.ID)
 	return err
@@ -1641,7 +1702,7 @@ func (r *areaOfOperationRepository) List(includeInactive bool) ([]*models.AreaOf
 		query = `SELECT id, name, code, description, is_active, created_at, updated_at 
 		         FROM areas_of_operation WHERE is_active = true ORDER BY name`
 	}
-	
+
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -1682,7 +1743,7 @@ func (r *areaOfOperationRepository) GetZones(areaOfOperationID uuid.UUID) ([]*mo
 	          INNER JOIN area_of_operation_zones aoz ON z.id = aoz.zone_id
 	          WHERE aoz.area_of_operation_id = $1
 	          ORDER BY z.name`
-	
+
 	rows, err := r.db.Query(query, areaOfOperationID)
 	if err != nil {
 		return nil, err
@@ -1724,7 +1785,7 @@ func (r *areaOfOperationRepository) GetBranches(areaOfOperationID uuid.UUID) ([]
 	          INNER JOIN area_of_operation_branches aob ON b.id = aob.branch_id
 	          WHERE aob.area_of_operation_id = $1
 	          ORDER BY b.name`
-	
+
 	rows, err := r.db.Query(query, areaOfOperationID)
 	if err != nil {
 		return nil, err
@@ -1771,7 +1832,7 @@ func (r *areaOfOperationRepository) GetAllBranches(areaOfOperationID uuid.UUID) 
 			WHERE aob.area_of_operation_id = $1
 		)
 		ORDER BY b.name`
-	
+
 	rows, err := r.db.Query(query, areaOfOperationID)
 	if err != nil {
 		return nil, err
@@ -1866,7 +1927,7 @@ func (r *zoneRepository) List(includeInactive bool) ([]*models.Zone, error) {
 		query = `SELECT id, name, code, description, is_active, created_at, updated_at 
 		         FROM zones WHERE is_active = true ORDER BY name`
 	}
-	
+
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -1907,7 +1968,7 @@ func (r *zoneRepository) GetBranches(zoneID uuid.UUID) ([]*models.Branch, error)
 	          INNER JOIN zone_branches zb ON b.id = zb.branch_id
 	          WHERE zb.zone_id = $1
 	          ORDER BY b.name`
-	
+
 	rows, err := r.db.Query(query, zoneID)
 	if err != nil {
 		return nil, err
@@ -2179,11 +2240,11 @@ func (r *positionQuotaRepository) List(filters interfaces.PositionQuotaFilters) 
 
 // DoctorAssignmentRepository implementation
 type doctorAssignmentRepository struct {
-	db                    *sql.DB
-	defaultScheduleRepo   interfaces.DoctorDefaultScheduleRepository
-	weeklyOffDayRepo     interfaces.DoctorWeeklyOffDayRepository
-	overrideRepo          interfaces.DoctorScheduleOverrideRepository
-	doctorRepo            interfaces.DoctorRepository
+	db                  *sql.DB
+	defaultScheduleRepo interfaces.DoctorDefaultScheduleRepository
+	weeklyOffDayRepo    interfaces.DoctorWeeklyOffDayRepository
+	overrideRepo        interfaces.DoctorScheduleOverrideRepository
+	doctorRepo          interfaces.DoctorRepository
 }
 
 func NewDoctorAssignmentRepository(
@@ -2196,7 +2257,7 @@ func NewDoctorAssignmentRepository(
 	return &doctorAssignmentRepository{
 		db:                  db,
 		defaultScheduleRepo: defaultScheduleRepo,
-		weeklyOffDayRepo:   weeklyOffDayRepo,
+		weeklyOffDayRepo:    weeklyOffDayRepo,
 		overrideRepo:        overrideRepo,
 		doctorRepo:          doctorRepo,
 	}
@@ -2249,7 +2310,7 @@ func (r *doctorAssignmentRepository) GetByBranchID(branchID uuid.UUID, startDate
 		r.overrideRepo,
 		r.doctorRepo,
 	)
-	
+
 	assignments := []*models.DoctorAssignment{}
 	currentDate := startDate
 	for !currentDate.After(endDate) {
@@ -2257,7 +2318,7 @@ func (r *doctorAssignmentRepository) GetByBranchID(branchID uuid.UUID, startDate
 		if err != nil {
 			return nil, err
 		}
-		
+
 		for _, doctorID := range doctorIDs {
 			doctor, err := r.doctorRepo.GetByID(doctorID)
 			if err != nil {
@@ -2266,7 +2327,7 @@ func (r *doctorAssignmentRepository) GetByBranchID(branchID uuid.UUID, startDate
 			if doctor == nil {
 				continue
 			}
-			
+
 			assignment := &models.DoctorAssignment{
 				ID:              uuid.New(),
 				DoctorID:        doctorID,
@@ -2278,10 +2339,10 @@ func (r *doctorAssignmentRepository) GetByBranchID(branchID uuid.UUID, startDate
 			}
 			assignments = append(assignments, assignment)
 		}
-		
+
 		currentDate = currentDate.AddDate(0, 0, 1)
 	}
-	
+
 	return assignments, nil
 }
 
@@ -2293,13 +2354,13 @@ func (r *doctorAssignmentRepository) GetByDate(date time.Time) ([]*models.Doctor
 		r.overrideRepo,
 		r.doctorRepo,
 	)
-	
+
 	// Get all doctors and calculate their assignments for this date
 	doctors, err := r.doctorRepo.List()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	assignments := []*models.DoctorAssignment{}
 	for _, doctor := range doctors {
 		calculated, err := calculator.CalculateAssignmentForDate(doctor.ID, date)
@@ -2309,7 +2370,7 @@ func (r *doctorAssignmentRepository) GetByDate(date time.Time) ([]*models.Doctor
 		if calculated == nil {
 			continue // Doctor is off
 		}
-		
+
 		assignment := &models.DoctorAssignment{
 			ID:              uuid.New(),
 			DoctorID:        calculated.DoctorID,
@@ -2321,7 +2382,7 @@ func (r *doctorAssignmentRepository) GetByDate(date time.Time) ([]*models.Doctor
 		}
 		assignments = append(assignments, assignment)
 	}
-	
+
 	return assignments, nil
 }
 
@@ -2333,7 +2394,7 @@ func (r *doctorAssignmentRepository) GetByDoctorID(doctorID uuid.UUID, startDate
 		r.overrideRepo,
 		r.doctorRepo,
 	)
-	
+
 	doctor, err := r.doctorRepo.GetByID(doctorID)
 	if err != nil {
 		return nil, err
@@ -2341,7 +2402,7 @@ func (r *doctorAssignmentRepository) GetByDoctorID(doctorID uuid.UUID, startDate
 	if doctor == nil {
 		return []*models.DoctorAssignment{}, nil
 	}
-	
+
 	assignments := []*models.DoctorAssignment{}
 	currentDate := startDate
 	for !currentDate.After(endDate) {
@@ -2363,7 +2424,7 @@ func (r *doctorAssignmentRepository) GetByDoctorID(doctorID uuid.UUID, startDate
 		}
 		currentDate = currentDate.AddDate(0, 0, 1)
 	}
-	
+
 	return assignments, nil
 }
 
@@ -2412,12 +2473,12 @@ func (r *doctorAssignmentRepository) GetDoctorsByBranchAndDate(branchID uuid.UUI
 		r.overrideRepo,
 		r.doctorRepo,
 	)
-	
+
 	doctorIDs, err := calculator.GetDoctorsByBranchAndDate(branchID, date)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert to DoctorAssignment models
 	assignments := []*models.DoctorAssignment{}
 	for _, doctorID := range doctorIDs {
@@ -2428,7 +2489,7 @@ func (r *doctorAssignmentRepository) GetDoctorsByBranchAndDate(branchID uuid.UUI
 		if doctor == nil {
 			continue
 		}
-		
+
 		assignment := &models.DoctorAssignment{
 			ID:              uuid.New(), // Generate ID for calculated assignment
 			DoctorID:        doctorID,
@@ -2440,7 +2501,7 @@ func (r *doctorAssignmentRepository) GetDoctorsByBranchAndDate(branchID uuid.UUI
 		}
 		assignments = append(assignments, assignment)
 	}
-	
+
 	return assignments, nil
 }
 
@@ -2543,33 +2604,68 @@ func (r *doctorOnOffDayRepository) GetByBranchAndDate(branchID uuid.UUID, date t
 	return day, err
 }
 
-// AllocationSuggestionRepository implementation
-type allocationSuggestionRepository struct {
+
+// SpecificPreferenceRepository implementation
+type specificPreferenceRepository struct {
 	db *sql.DB
 }
 
-func NewAllocationSuggestionRepository(db *sql.DB) interfaces.AllocationSuggestionRepository {
-	return &allocationSuggestionRepository{db: db}
+func NewSpecificPreferenceRepository(db *sql.DB) interfaces.SpecificPreferenceRepository {
+	return &specificPreferenceRepository{db: db}
 }
 
-func (r *allocationSuggestionRepository) Create(suggestion *models.AllocationSuggestion) error {
-	query := `INSERT INTO allocation_suggestions (id, rotation_staff_id, branch_id, date, position_id, status, confidence, reason, criteria_used) 
-	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING created_at`
-	return r.db.QueryRow(query, suggestion.ID, suggestion.RotationStaffID, suggestion.BranchID, suggestion.Date,
-		suggestion.PositionID, suggestion.Status, suggestion.Confidence, suggestion.Reason, suggestion.CriteriaUsed).
-		Scan(&suggestion.CreatedAt)
+func (r *specificPreferenceRepository) Create(preference *models.SpecificPreference) error {
+	preference.ID = uuid.New()
+	preference.CreatedAt = time.Now()
+	preference.UpdatedAt = time.Now()
+
+	if err := preference.Validate(); err != nil {
+		return err
+	}
+
+	query := `INSERT INTO specific_preferences (id, branch_id, doctor_id, day_of_week, preference_type, position_id, staff_count, staff_id, is_active, created_at, updated_at)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING created_at, updated_at`
+
+	var branchID, doctorID, positionID, staffID interface{}
+	var dayOfWeek interface{}
+	var staffCount interface{}
+
+	if preference.BranchID != nil {
+		branchID = *preference.BranchID
+	}
+	if preference.DoctorID != nil {
+		doctorID = *preference.DoctorID
+	}
+	if preference.DayOfWeek != nil {
+		dayOfWeek = *preference.DayOfWeek
+	}
+	if preference.PositionID != nil {
+		positionID = *preference.PositionID
+	}
+	if preference.StaffID != nil {
+		staffID = *preference.StaffID
+	}
+	if preference.StaffCount != nil {
+		staffCount = *preference.StaffCount
+	}
+
+	return r.db.QueryRow(query, preference.ID, branchID, doctorID, dayOfWeek, preference.PreferenceType,
+		positionID, staffCount, staffID, preference.IsActive, preference.CreatedAt, preference.UpdatedAt).
+		Scan(&preference.CreatedAt, &preference.UpdatedAt)
 }
 
-func (r *allocationSuggestionRepository) GetByID(id uuid.UUID) (*models.AllocationSuggestion, error) {
-	query := `SELECT id, rotation_staff_id, branch_id, date, position_id, status, confidence, reason, criteria_used, created_at, reviewed_by, reviewed_at 
-	          FROM allocation_suggestions WHERE id = $1`
-	suggestion := &models.AllocationSuggestion{}
-	var reviewedBy sql.NullString
-	var reviewedAt sql.NullTime
+func (r *specificPreferenceRepository) GetByID(id uuid.UUID) (*models.SpecificPreference, error) {
+	preference := &models.SpecificPreference{}
+	query := `SELECT id, branch_id, doctor_id, day_of_week, preference_type, position_id, staff_count, staff_id, is_active, created_at, updated_at
+	          FROM specific_preferences WHERE id = $1`
+
+	var branchID, doctorID, positionID, staffID sql.NullString
+	var dayOfWeek sql.NullInt64
+	var staffCount sql.NullInt64
+
 	err := r.db.QueryRow(query, id).Scan(
-		&suggestion.ID, &suggestion.RotationStaffID, &suggestion.BranchID, &suggestion.Date,
-		&suggestion.PositionID, &suggestion.Status, &suggestion.Confidence, &suggestion.Reason,
-		&suggestion.CriteriaUsed, &suggestion.CreatedAt, &reviewedBy, &reviewedAt,
+		&preference.ID, &branchID, &doctorID, &dayOfWeek, &preference.PreferenceType,
+		&positionID, &staffCount, &staffID, &preference.IsActive, &preference.CreatedAt, &preference.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -2577,150 +2673,177 @@ func (r *allocationSuggestionRepository) GetByID(id uuid.UUID) (*models.Allocati
 	if err != nil {
 		return nil, err
 	}
-	if reviewedBy.Valid {
-		rb, _ := uuid.Parse(reviewedBy.String)
-		suggestion.ReviewedBy = &rb
+
+	if branchID.Valid {
+		bID, _ := uuid.Parse(branchID.String)
+		preference.BranchID = &bID
 	}
-	if reviewedAt.Valid {
-		suggestion.ReviewedAt = &reviewedAt.Time
+	if doctorID.Valid {
+		dID, _ := uuid.Parse(doctorID.String)
+		preference.DoctorID = &dID
 	}
-	return suggestion, nil
+	if dayOfWeek.Valid {
+		dow := int(dayOfWeek.Int64)
+		preference.DayOfWeek = &dow
+	}
+	if positionID.Valid {
+		pID, _ := uuid.Parse(positionID.String)
+		preference.PositionID = &pID
+	}
+	if staffID.Valid {
+		sID, _ := uuid.Parse(staffID.String)
+		preference.StaffID = &sID
+	}
+	if staffCount.Valid {
+		sc := int(staffCount.Int64)
+		preference.StaffCount = &sc
+	}
+
+	return preference, nil
 }
 
-func (r *allocationSuggestionRepository) GetByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.AllocationSuggestion, error) {
-	query := `SELECT id, rotation_staff_id, branch_id, date, position_id, status, confidence, reason, criteria_used, created_at, reviewed_by, reviewed_at 
-	          FROM allocation_suggestions WHERE branch_id = $1 AND date >= $2 AND date <= $3 ORDER BY date, position_id`
-	rows, err := r.db.Query(query, branchID, startDate, endDate)
+func (r *specificPreferenceRepository) List(filters interfaces.SpecificPreferenceFilters) ([]*models.SpecificPreference, error) {
+	query := `SELECT id, branch_id, doctor_id, day_of_week, preference_type, position_id, staff_count, staff_id, is_active, created_at, updated_at
+	          FROM specific_preferences WHERE 1=1`
+	args := []interface{}{}
+	argPos := 1
+
+	if filters.BranchID != nil {
+		query += fmt.Sprintf(" AND (branch_id = $%d OR branch_id IS NULL)", argPos)
+		args = append(args, *filters.BranchID)
+		argPos++
+	}
+	if filters.DoctorID != nil {
+		query += fmt.Sprintf(" AND (doctor_id = $%d OR doctor_id IS NULL)", argPos)
+		args = append(args, *filters.DoctorID)
+		argPos++
+	}
+	if filters.DayOfWeek != nil {
+		query += fmt.Sprintf(" AND (day_of_week = $%d OR day_of_week IS NULL)", argPos)
+		args = append(args, *filters.DayOfWeek)
+		argPos++
+	}
+	if filters.IsActive != nil {
+		query += fmt.Sprintf(" AND is_active = $%d", argPos)
+		args = append(args, *filters.IsActive)
+		argPos++
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var suggestions []*models.AllocationSuggestion
+	var preferences []*models.SpecificPreference
 	for rows.Next() {
-		suggestion := &models.AllocationSuggestion{}
-		var reviewedBy sql.NullString
-		var reviewedAt sql.NullTime
-		if err := rows.Scan(
-			&suggestion.ID, &suggestion.RotationStaffID, &suggestion.BranchID, &suggestion.Date,
-			&suggestion.PositionID, &suggestion.Status, &suggestion.Confidence, &suggestion.Reason,
-			&suggestion.CriteriaUsed, &suggestion.CreatedAt, &reviewedBy, &reviewedAt,
-		); err != nil {
+		preference := &models.SpecificPreference{}
+		var branchID, doctorID, positionID, staffID sql.NullString
+		var dayOfWeek sql.NullInt64
+		var staffCount sql.NullInt64
+
+		err := rows.Scan(
+			&preference.ID, &branchID, &doctorID, &dayOfWeek, &preference.PreferenceType,
+			&positionID, &staffCount, &staffID, &preference.IsActive, &preference.CreatedAt, &preference.UpdatedAt,
+		)
+		if err != nil {
 			return nil, err
 		}
-		if reviewedBy.Valid {
-			rb, _ := uuid.Parse(reviewedBy.String)
-			suggestion.ReviewedBy = &rb
+
+		if branchID.Valid {
+			bID, _ := uuid.Parse(branchID.String)
+			preference.BranchID = &bID
 		}
-		if reviewedAt.Valid {
-			suggestion.ReviewedAt = &reviewedAt.Time
+		if doctorID.Valid {
+			dID, _ := uuid.Parse(doctorID.String)
+			preference.DoctorID = &dID
 		}
-		suggestions = append(suggestions, suggestion)
+		if dayOfWeek.Valid {
+			dow := int(dayOfWeek.Int64)
+			preference.DayOfWeek = &dow
+		}
+		if positionID.Valid {
+			pID, _ := uuid.Parse(positionID.String)
+			preference.PositionID = &pID
+		}
+		if staffID.Valid {
+			sID, _ := uuid.Parse(staffID.String)
+			preference.StaffID = &sID
+		}
+		if staffCount.Valid {
+			sc := int(staffCount.Int64)
+			preference.StaffCount = &sc
+		}
+
+		preferences = append(preferences, preference)
 	}
-	return suggestions, rows.Err()
+
+	return preferences, rows.Err()
 }
 
-func (r *allocationSuggestionRepository) GetByStatus(status models.SuggestionStatus) ([]*models.AllocationSuggestion, error) {
-	query := `SELECT id, rotation_staff_id, branch_id, date, position_id, status, confidence, reason, criteria_used, created_at, reviewed_by, reviewed_at 
-	          FROM allocation_suggestions WHERE status = $1 ORDER BY created_at DESC`
-	rows, err := r.db.Query(query, status)
+func (r *specificPreferenceRepository) GetMatchingPreferences(branchID *uuid.UUID, doctorID *uuid.UUID, dayOfWeek *int) ([]*models.SpecificPreference, error) {
+	// Get all active preferences
+	filters := interfaces.SpecificPreferenceFilters{
+		IsActive: &[]bool{true}[0],
+	}
+	allPreferences, err := r.List(filters)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var suggestions []*models.AllocationSuggestion
-	for rows.Next() {
-		suggestion := &models.AllocationSuggestion{}
-		var reviewedBy sql.NullString
-		var reviewedAt sql.NullTime
-		if err := rows.Scan(
-			&suggestion.ID, &suggestion.RotationStaffID, &suggestion.BranchID, &suggestion.Date,
-			&suggestion.PositionID, &suggestion.Status, &suggestion.Confidence, &suggestion.Reason,
-			&suggestion.CriteriaUsed, &suggestion.CreatedAt, &reviewedBy, &reviewedAt,
-		); err != nil {
-			return nil, err
+	// Filter by matching logic
+	var matching []*models.SpecificPreference
+	for _, pref := range allPreferences {
+		if pref.Matches(branchID, doctorID, dayOfWeek) {
+			matching = append(matching, pref)
 		}
-		if reviewedBy.Valid {
-			rb, _ := uuid.Parse(reviewedBy.String)
-			suggestion.ReviewedBy = &rb
-		}
-		if reviewedAt.Valid {
-			suggestion.ReviewedAt = &reviewedAt.Time
-		}
-		suggestions = append(suggestions, suggestion)
 	}
-	return suggestions, rows.Err()
+
+	return matching, nil
 }
 
-func (r *allocationSuggestionRepository) Update(suggestion *models.AllocationSuggestion) error {
-	query := `UPDATE allocation_suggestions 
-	          SET status = $1, reviewed_by = $2, reviewed_at = CURRENT_TIMESTAMP 
-	          WHERE id = $3 RETURNING reviewed_at`
-	return r.db.QueryRow(query, suggestion.Status, suggestion.ReviewedBy, suggestion.ID).Scan(&suggestion.ReviewedAt)
-}
+func (r *specificPreferenceRepository) Update(preference *models.SpecificPreference) error {
+	preference.UpdatedAt = time.Now()
 
-func (r *allocationSuggestionRepository) Delete(id uuid.UUID) error {
-	query := `DELETE FROM allocation_suggestions WHERE id = $1`
-	_, err := r.db.Exec(query, id)
+	if err := preference.Validate(); err != nil {
+		return err
+	}
+
+	query := `UPDATE specific_preferences SET branch_id = $1, doctor_id = $2, day_of_week = $3, preference_type = $4,
+	          position_id = $5, staff_count = $6, staff_id = $7, is_active = $8, updated_at = $9 WHERE id = $10`
+
+	var branchID, doctorID, positionID, staffID interface{}
+	var dayOfWeek interface{}
+	var staffCount interface{}
+
+	if preference.BranchID != nil {
+		branchID = *preference.BranchID
+	}
+	if preference.DoctorID != nil {
+		doctorID = *preference.DoctorID
+	}
+	if preference.DayOfWeek != nil {
+		dayOfWeek = *preference.DayOfWeek
+	}
+	if preference.PositionID != nil {
+		positionID = *preference.PositionID
+	}
+	if preference.StaffID != nil {
+		staffID = *preference.StaffID
+	}
+	if preference.StaffCount != nil {
+		staffCount = *preference.StaffCount
+	}
+
+	_, err := r.db.Exec(query, branchID, doctorID, dayOfWeek, preference.PreferenceType,
+		positionID, staffCount, staffID, preference.IsActive, preference.UpdatedAt, preference.ID)
 	return err
 }
 
-func (r *allocationSuggestionRepository) BulkCreate(suggestions []*models.AllocationSuggestion) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare(`INSERT INTO allocation_suggestions (id, rotation_staff_id, branch_id, date, position_id, status, confidence, reason, criteria_used) 
-	                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	for _, suggestion := range suggestions {
-		_, err := stmt.Exec(suggestion.ID, suggestion.RotationStaffID, suggestion.BranchID, suggestion.Date,
-			suggestion.PositionID, suggestion.Status, suggestion.Confidence, suggestion.Reason, suggestion.CriteriaUsed)
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
+func (r *specificPreferenceRepository) Delete(id uuid.UUID) error {
+	query := `DELETE FROM specific_preferences WHERE id = $1`
+	_, err := r.db.Exec(query, id)
+	return err
 }
-
-func (r *allocationSuggestionRepository) GetPendingByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.AllocationSuggestion, error) {
-	query := `SELECT id, rotation_staff_id, branch_id, date, position_id, status, confidence, reason, criteria_used, created_at, reviewed_by, reviewed_at 
-	          FROM allocation_suggestions WHERE branch_id = $1 AND date >= $2 AND date <= $3 AND status = $4 ORDER BY date, position_id`
-	rows, err := r.db.Query(query, branchID, startDate, endDate, models.SuggestionStatusPending)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var suggestions []*models.AllocationSuggestion
-	for rows.Next() {
-		suggestion := &models.AllocationSuggestion{}
-		var reviewedBy sql.NullString
-		var reviewedAt sql.NullTime
-		if err := rows.Scan(
-			&suggestion.ID, &suggestion.RotationStaffID, &suggestion.BranchID, &suggestion.Date,
-			&suggestion.PositionID, &suggestion.Status, &suggestion.Confidence, &suggestion.Reason,
-			&suggestion.CriteriaUsed, &suggestion.CreatedAt, &reviewedBy, &reviewedAt,
-		); err != nil {
-			return nil, err
-		}
-		if reviewedBy.Valid {
-			rb, _ := uuid.Parse(reviewedBy.String)
-			suggestion.ReviewedBy = &rb
-		}
-		if reviewedAt.Valid {
-			suggestion.ReviewedAt = &reviewedAt.Time
-		}
-		suggestions = append(suggestions, suggestion)
-	}
-	return suggestions, rows.Err()
-}
-

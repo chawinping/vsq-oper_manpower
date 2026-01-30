@@ -218,6 +218,7 @@ export default function BranchManagementPage() {
                 <tr>
                   <th>Code</th>
                   <th>Name</th>
+                  <th>Branch Type</th>
                   <th>Priority</th>
                   <th>Actions</th>
                 </tr>
@@ -227,6 +228,7 @@ export default function BranchManagementPage() {
                   <tr key={branch.id}>
                     <td className="font-medium">{branch.code}</td>
                     <td>{branch.name}</td>
+                    <td>{branch.branch_type?.name || '-'}</td>
                     <td>
                       <span className={`badge ${
                         branch.priority === 1

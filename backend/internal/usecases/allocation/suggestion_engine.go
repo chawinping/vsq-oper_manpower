@@ -1,26 +1,28 @@
 package allocation
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"vsq-oper-manpower/backend/internal/domain/models"
+
+	"github.com/google/uuid"
 )
 
 // SuggestionEngine generates allocation suggestions based on criteria and quota
 type SuggestionEngine struct {
-	repos            *RepositoriesWrapper
-	criteriaEngine  *CriteriaEngine
-	quotaCalculator *QuotaCalculator
+	repos               *RepositoriesWrapper
+	multiCriteriaFilter *MultiCriteriaFilter
+	quotaCalculator     *QuotaCalculator
 }
 
 // NewSuggestionEngine creates a new suggestion engine
-func NewSuggestionEngine(repos *RepositoriesWrapper, criteriaEngine *CriteriaEngine, quotaCalculator *QuotaCalculator) *SuggestionEngine {
+func NewSuggestionEngine(repos *RepositoriesWrapper, multiCriteriaFilter *MultiCriteriaFilter, quotaCalculator *QuotaCalculator) *SuggestionEngine {
 	return &SuggestionEngine{
-		repos:           repos,
-		criteriaEngine:  criteriaEngine,
-		quotaCalculator: quotaCalculator,
+		repos:               repos,
+		multiCriteriaFilter: multiCriteriaFilter,
+		quotaCalculator:     quotaCalculator,
 	}
 }
 
@@ -58,56 +60,53 @@ func (e *SuggestionEngine) generateSuggestionsForBranch(branchID uuid.UUID, date
 		return []*models.AllocationSuggestion{}, nil
 	}
 
-	// Get quota status for the branch
-	quotaStatus, err := e.quotaCalculator.CalculateBranchQuotaStatus(branchID, date)
+	// Get criteria priority order from settings
+	priorityOrder, enableDoctorPrefs, err := e.getCriteriaPriorityOrder()
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate quota status: %w", err)
+		// Use defaults if settings not found
+		priorityOrder = DefaultCriteriaPriorityOrder()
+		enableDoctorPrefs = false
 	}
 
-	// Evaluate criteria for the branch
-	allocationScore, err := e.criteriaEngine.EvaluateCriteria(branchID, date)
+	// Use MultiCriteriaFilter to generate ranked suggestions
+	multiSuggestions, err := e.multiCriteriaFilter.GenerateRankedSuggestions(
+		[]uuid.UUID{branchID},
+		date,
+		priorityOrder,
+		enableDoctorPrefs,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate criteria: %w", err)
+		return nil, fmt.Errorf("failed to generate ranked suggestions: %w", err)
 	}
 
+	// Convert MultiCriteriaFilter suggestions to models.AllocationSuggestion
 	suggestions := []*models.AllocationSuggestion{}
-
-	// Generate suggestions for positions that need staff
-	for _, positionStatus := range quotaStatus.PositionStatuses {
-		if positionStatus.StillRequired <= 0 {
-			continue // No need for additional staff
-		}
-
+	for _, ms := range multiSuggestions {
 		// Find eligible rotation staff for this position
-		eligibleStaff, err := e.findEligibleRotationStaff(branchID, positionStatus.PositionID, date)
-		if err != nil {
-			continue // Skip if we can't find eligible staff
+		eligibleStaff, err := e.findEligibleRotationStaff(ms.BranchID, ms.PositionID, date)
+		if err != nil || len(eligibleStaff) == 0 {
+			continue // Skip if no eligible staff
 		}
 
-		// Generate suggestions based on how many staff are needed
-		for i := 0; i < positionStatus.StillRequired && i < len(eligibleStaff); i++ {
-			staff := eligibleStaff[i]
+		// Use the first eligible staff member
+		staff := eligibleStaff[0]
 
-			// Calculate confidence based on criteria score and staff availability
-			confidence := e.calculateConfidence(allocationScore, staff, branchID, date)
+		// Convert criteria breakdown to JSON
+		criteriaJSON, _ := json.Marshal(ms.CriteriaBreakdown)
 
-			// Generate reason
-			reason := e.generateReason(allocationScore, positionStatus, staff)
-
-			suggestion := &models.AllocationSuggestion{
-				ID:              uuid.New(),
-				RotationStaffID: staff.ID,
-				BranchID:        branchID,
-				Date:            date,
-				PositionID:      positionStatus.PositionID,
-				Status:          models.SuggestionStatusPending,
-				Confidence:      confidence,
-				Reason:          reason,
-				CriteriaUsed:    e.getCriteriaUsedJSON(allocationScore),
-			}
-
-			suggestions = append(suggestions, suggestion)
+		suggestion := &models.AllocationSuggestion{
+			ID:              uuid.New(),
+			RotationStaffID: staff.ID,
+			BranchID:        ms.BranchID,
+			Date:            ms.Date,
+			PositionID:      ms.PositionID,
+			Status:          models.SuggestionStatusPending,
+			Confidence:      ms.PriorityScore,
+			Reason:          ms.Reason,
+			CriteriaUsed:    string(criteriaJSON),
 		}
+
+		suggestions = append(suggestions, suggestion)
 	}
 
 	return suggestions, nil
@@ -141,8 +140,17 @@ func (e *SuggestionEngine) findEligibleRotationStaff(branchID uuid.UUID, positio
 			continue
 		}
 
-		// Check if staff matches the position
-		if staff.PositionID != positionID {
+		// Check if staff matches the position directly OR via mapping
+		matchesPosition := staff.PositionID == positionID
+		if !matchesPosition {
+			// Check for staff-to-position mapping
+			mapping, err := e.repos.RotationStaffBranchPosition.GetByStaffAndPosition(staff.ID, positionID)
+			if err == nil && mapping != nil && mapping.IsActive {
+				matchesPosition = true
+				// Note: substitution level can be used for priority adjustment later
+			}
+		}
+		if !matchesPosition {
 			continue
 		}
 
@@ -180,49 +188,32 @@ func (e *SuggestionEngine) isStaffAvailable(staffID uuid.UUID, date time.Time) (
 	return true, nil
 }
 
-// calculateConfidence calculates confidence score for a suggestion
-func (e *SuggestionEngine) calculateConfidence(score *AllocationScore, staff *models.Staff, branchID uuid.UUID, date time.Time) float64 {
-	// Base confidence from overall allocation score
-	confidence := score.OverallScore
-
-	// Adjust based on staff skill level (if available)
-	if staff.SkillLevel > 0 {
-		skillBonus := float64(staff.SkillLevel) / 10.0 * 0.1 // Up to 10% bonus
-		confidence += skillBonus
+// getCriteriaPriorityOrder retrieves criteria priority order from settings
+func (e *SuggestionEngine) getCriteriaPriorityOrder() (CriteriaPriorityOrder, bool, error) {
+	// Get priority order setting
+	priorityOrderSetting, err := e.repos.Settings.GetByKey("allocation_criteria_priority_order")
+	if err != nil || priorityOrderSetting == nil {
+		return CriteriaPriorityOrder{}, false, fmt.Errorf("priority order setting not found")
 	}
 
-	// Ensure confidence is between 0 and 1
-	if confidence > 1.0 {
-		confidence = 1.0
-	}
-	if confidence < 0.0 {
-		confidence = 0.0
+	var priorityOrder CriteriaPriorityOrder
+	if err := json.Unmarshal([]byte(priorityOrderSetting.Value), &priorityOrder); err != nil {
+		return CriteriaPriorityOrder{}, false, fmt.Errorf("failed to parse priority order: %w", err)
 	}
 
-	return confidence
-}
-
-// generateReason generates a human-readable reason for the suggestion
-func (e *SuggestionEngine) generateReason(score *AllocationScore, positionStatus PositionQuotaStatus, staff *models.Staff) string {
-	reason := fmt.Sprintf("Position '%s' requires %d more staff. ", positionStatus.PositionName, positionStatus.StillRequired)
-	
-	if score.OverallScore > 0.7 {
-		reason += "High allocation score indicates strong need. "
-	} else if score.OverallScore > 0.4 {
-		reason += "Moderate allocation score. "
-	} else {
-		reason += "Low allocation score but minimum requirements not met. "
+	// Validate priority order
+	if len(priorityOrder.PriorityOrder) == 0 {
+		return CriteriaPriorityOrder{}, false, fmt.Errorf("priority order is empty")
 	}
 
-	reason += fmt.Sprintf("Staff '%s' is eligible and available.", staff.Name)
-	return reason
-}
+	// Get doctor preferences setting
+	doctorPrefSetting, _ := e.repos.Settings.GetByKey("allocation_enable_doctor_preferences")
+	enableDoctorPrefs := false
+	if doctorPrefSetting != nil && doctorPrefSetting.Value == "true" {
+		enableDoctorPrefs = true
+	}
 
-// getCriteriaUsedJSON returns JSON string of criteria IDs used
-func (e *SuggestionEngine) getCriteriaUsedJSON(score *AllocationScore) string {
-	// For now, return empty string
-	// TODO: Track which specific criteria were used and return their IDs
-	return "[]"
+	return priorityOrder, enableDoctorPrefs, nil
 }
 
 // ApproveSuggestion approves a suggestion and creates a rotation assignment

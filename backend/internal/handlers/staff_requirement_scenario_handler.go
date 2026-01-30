@@ -4,11 +4,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"vsq-oper-manpower/backend/internal/domain/models"
 	"vsq-oper-manpower/backend/internal/repositories/postgres"
 	"vsq-oper-manpower/backend/internal/usecases/scenario"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type StaffRequirementScenarioHandler struct {
@@ -28,7 +29,7 @@ func (h *StaffRequirementScenarioHandler) List(c *gin.Context) {
 		return
 	}
 
-	// Load position requirements for each scenario
+	// Load position requirements and specific staff requirements for each scenario
 	for _, scenario := range scenarios {
 		requirements, err := h.repos.ScenarioPositionRequirement.GetByScenarioID(scenario.ID)
 		if err == nil {
@@ -36,6 +37,13 @@ func (h *StaffRequirementScenarioHandler) List(c *gin.Context) {
 			scenario.PositionRequirements = make([]models.ScenarioPositionRequirement, len(requirements))
 			for i, req := range requirements {
 				scenario.PositionRequirements[i] = *req
+			}
+		}
+		specificStaffReqs, err := h.repos.ScenarioSpecificStaffRequirement.GetByScenarioID(scenario.ID)
+		if err == nil {
+			scenario.SpecificStaffRequirements = make([]models.ScenarioSpecificStaffRequirement, len(specificStaffReqs))
+			for i, req := range specificStaffReqs {
+				scenario.SpecificStaffRequirements[i] = *req
 			}
 		}
 	}
@@ -72,11 +80,36 @@ func (h *StaffRequirementScenarioHandler) GetByID(c *gin.Context) {
 		}
 	}
 
+	// Load specific staff requirements
+	specificStaffReqs, err := h.repos.ScenarioSpecificStaffRequirement.GetByScenarioID(scenario.ID)
+	if err == nil {
+		scenario.SpecificStaffRequirements = make([]models.ScenarioSpecificStaffRequirement, len(specificStaffReqs))
+		for i, req := range specificStaffReqs {
+			scenario.SpecificStaffRequirements[i] = *req
+		}
+	}
+
 	// Load revenue tier if present
 	if scenario.RevenueLevelTierID != nil {
 		tier, err := h.repos.RevenueLevelTier.GetByID(*scenario.RevenueLevelTierID)
 		if err == nil && tier != nil {
 			scenario.RevenueLevelTier = tier
+		}
+	}
+
+	// Load doctor if present
+	if scenario.DoctorID != nil {
+		doctor, err := h.repos.Doctor.GetByID(*scenario.DoctorID)
+		if err == nil && doctor != nil {
+			scenario.Doctor = doctor
+		}
+	}
+
+	// Load branch if present
+	if scenario.BranchID != nil {
+		branch, err := h.repos.Branch.GetByID(*scenario.BranchID)
+		if err == nil && branch != nil {
+			scenario.Branch = branch
 		}
 	}
 
@@ -92,20 +125,22 @@ func (h *StaffRequirementScenarioHandler) Create(c *gin.Context) {
 	}
 
 	scenario := &models.StaffRequirementScenario{
-		ID:                    uuid.New(),
-		ScenarioName:          req.ScenarioName,
-		Description:           req.Description,
-		RevenueLevelTierID:    req.RevenueLevelTierID,
-		MinRevenue:            req.MinRevenue,
-		MaxRevenue:            req.MaxRevenue,
-		UseDayOfWeekRevenue:   req.UseDayOfWeekRevenue,
+		ID:                     uuid.New(),
+		ScenarioName:           req.ScenarioName,
+		Description:            req.Description,
+		DoctorID:               req.DoctorID,
+		BranchID:               req.BranchID,
+		RevenueLevelTierID:     req.RevenueLevelTierID,
+		MinRevenue:             req.MinRevenue,
+		MaxRevenue:             req.MaxRevenue,
+		UseDayOfWeekRevenue:    req.UseDayOfWeekRevenue,
 		UseSpecificDateRevenue: req.UseSpecificDateRevenue,
-		DoctorCount:           req.DoctorCount,
-		MinDoctorCount:        req.MinDoctorCount,
-		DayOfWeek:             req.DayOfWeek,
-		IsDefault:             req.IsDefault,
-		IsActive:              req.IsActive,
-		Priority:              req.Priority,
+		DoctorCount:            req.DoctorCount,
+		MinDoctorCount:         req.MinDoctorCount,
+		DayOfWeek:              req.DayOfWeek,
+		IsDefault:              false, // Default scenarios are not allowed
+		IsActive:               req.IsActive,
+		Priority:               req.Priority,
 	}
 
 	if err := h.repos.StaffRequirementScenario.Create(scenario); err != nil {
@@ -132,6 +167,22 @@ func (h *StaffRequirementScenarioHandler) Create(c *gin.Context) {
 		}
 	}
 
+	// Create specific staff requirements
+	if len(req.SpecificStaffRequirements) > 0 {
+		specificStaffReqs := make([]*models.ScenarioSpecificStaffRequirement, len(req.SpecificStaffRequirements))
+		for i, reqReq := range req.SpecificStaffRequirements {
+			specificStaffReqs[i] = &models.ScenarioSpecificStaffRequirement{
+				ID:         uuid.New(),
+				ScenarioID: scenario.ID,
+				StaffID:    reqReq.StaffID,
+			}
+		}
+		if err := h.repos.ScenarioSpecificStaffRequirement.BulkUpsert(specificStaffReqs); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create specific staff requirements: " + err.Error()})
+			return
+		}
+	}
+
 	// Reload scenario with requirements
 	requirements, _ := h.repos.ScenarioPositionRequirement.GetByScenarioID(scenario.ID)
 	if requirements != nil {
@@ -139,6 +190,13 @@ func (h *StaffRequirementScenarioHandler) Create(c *gin.Context) {
 		scenario.PositionRequirements = make([]models.ScenarioPositionRequirement, len(requirements))
 		for i, req := range requirements {
 			scenario.PositionRequirements[i] = *req
+		}
+	}
+	specificStaffReqs, _ := h.repos.ScenarioSpecificStaffRequirement.GetByScenarioID(scenario.ID)
+	if specificStaffReqs != nil {
+		scenario.SpecificStaffRequirements = make([]models.ScenarioSpecificStaffRequirement, len(specificStaffReqs))
+		for i, req := range specificStaffReqs {
+			scenario.SpecificStaffRequirements[i] = *req
 		}
 	}
 
@@ -176,6 +234,12 @@ func (h *StaffRequirementScenarioHandler) Update(c *gin.Context) {
 	if req.Description != nil {
 		scenario.Description = req.Description
 	}
+	if req.DoctorID != nil {
+		scenario.DoctorID = req.DoctorID
+	}
+	if req.BranchID != nil {
+		scenario.BranchID = req.BranchID
+	}
 	if req.RevenueLevelTierID != nil {
 		scenario.RevenueLevelTierID = req.RevenueLevelTierID
 	}
@@ -200,9 +264,8 @@ func (h *StaffRequirementScenarioHandler) Update(c *gin.Context) {
 	if req.DayOfWeek != nil {
 		scenario.DayOfWeek = req.DayOfWeek
 	}
-	if req.IsDefault != nil {
-		scenario.IsDefault = *req.IsDefault
-	}
+	// Always set is_default to false - default scenarios are not allowed
+	scenario.IsDefault = false
 	if req.IsActive != nil {
 		scenario.IsActive = *req.IsActive
 	}
@@ -280,6 +343,48 @@ func (h *StaffRequirementScenarioHandler) UpdatePositionRequirements(c *gin.Cont
 	c.JSON(http.StatusOK, gin.H{"message": "Position requirements updated successfully"})
 }
 
+// UpdateSpecificStaffRequirements updates specific staff requirements for a scenario
+func (h *StaffRequirementScenarioHandler) UpdateSpecificStaffRequirements(c *gin.Context) {
+	idStr := c.Param("id")
+	scenarioID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scenario ID"})
+		return
+	}
+
+	var req struct {
+		Requirements []models.ScenarioSpecificStaffRequirementCreate `json:"requirements" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Delete existing requirements
+	if err := h.repos.ScenarioSpecificStaffRequirement.DeleteByScenarioID(scenarioID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete existing requirements: " + err.Error()})
+		return
+	}
+
+	// Create new requirements
+	if len(req.Requirements) > 0 {
+		requirements := make([]*models.ScenarioSpecificStaffRequirement, len(req.Requirements))
+		for i, reqReq := range req.Requirements {
+			requirements[i] = &models.ScenarioSpecificStaffRequirement{
+				ID:         uuid.New(),
+				ScenarioID: scenarioID,
+				StaffID:    reqReq.StaffID,
+			}
+		}
+		if err := h.repos.ScenarioSpecificStaffRequirement.BulkUpsert(requirements); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create requirements: " + err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Specific staff requirements updated successfully"})
+}
+
 // CalculateRequirements calculates staff requirements for a branch/date/position
 func (h *StaffRequirementScenarioHandler) CalculateRequirements(c *gin.Context) {
 	var req struct {
@@ -287,7 +392,7 @@ func (h *StaffRequirementScenarioHandler) CalculateRequirements(c *gin.Context) 
 		Date          string `json:"date" binding:"required"`
 		PositionID    string `json:"position_id" binding:"required"`
 		BasePreferred int    `json:"base_preferred"`
-		BaseMinimum    int    `json:"base_minimum"`
+		BaseMinimum   int    `json:"base_minimum"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

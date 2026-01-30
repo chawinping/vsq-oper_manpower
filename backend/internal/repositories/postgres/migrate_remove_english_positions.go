@@ -128,24 +128,8 @@ func MigrateRemoveEnglishPositions(db *sql.DB) error {
 		fmt.Println("  No position_quotas records to update")
 	}
 
-	// Step 3: Update allocation_suggestions.position_id
-	fmt.Println("Updating allocation_suggestions records...")
-	totalSuggestionsUpdated := 0
-	for englishID, thaiID := range PositionMapping {
-		query := `UPDATE allocation_suggestions SET position_id = $1 WHERE position_id = $2`
-		result, err := tx.Exec(query, thaiID, englishID)
-		if err != nil {
-			return fmt.Errorf("failed to update allocation_suggestions for position %s: %w", englishID, err)
-		}
-		rowsAffected, _ := result.RowsAffected()
-		if rowsAffected > 0 {
-			fmt.Printf("  Updated %d suggestion records: %s → %s\n", rowsAffected, englishID, thaiID)
-			totalSuggestionsUpdated += int(rowsAffected)
-		}
-	}
-	if totalSuggestionsUpdated == 0 {
-		fmt.Println("  No allocation_suggestions records to update")
-	}
+	// Step 3: Update allocation_suggestions.position_id (skipped - table removed)
+	fmt.Println("Skipping allocation_suggestions update (table has been removed)")
 
 	// Step 4: Update staff_allocation_rules.position_id (if exists)
 	fmt.Println("Updating staff_allocation_rules records...")
@@ -244,12 +228,8 @@ func MigrateRemoveEnglishPositions(db *sql.DB) error {
 			}
 		}
 
-		// Update allocation_suggestions
-		query = `UPDATE allocation_suggestions SET position_id = $1 WHERE position_id = $2`
-		result, err = tx.Exec(query, targetID, thaiID)
-		if err != nil {
-			return fmt.Errorf("failed to update allocation_suggestions for position %s: %w", thaiID, err)
-		}
+		// Update allocation_suggestions (skipped - table removed)
+		// Table has been removed, skipping update
 		rowsAffected, _ = result.RowsAffected()
 		if rowsAffected > 0 {
 			fmt.Printf("  Updated %d suggestion records: %s → %s\n", rowsAffected, thaiID, targetID)

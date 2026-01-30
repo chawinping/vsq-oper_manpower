@@ -41,6 +41,7 @@ const navCategories: NavCategory[] = [
       { label: 'Staff Scheduling', href: '/staff-scheduling', roles: ['admin', 'branch_manager'] },
       { label: 'Doctor Scheduling', href: '/doctor-schedule', roles: ['admin', 'branch_manager'] },
       { label: 'Rotation Staff Scheduling', href: '/rotation-scheduling', roles: ['admin', 'area_manager', 'district_manager'] },
+      { label: 'Allocate Staff', href: '/allocate-staff', roles: ['admin', 'area_manager', 'district_manager'] },
     ],
   },
   {
@@ -48,8 +49,11 @@ const navCategories: NavCategory[] = [
     roles: ['admin'],
     items: [
       { label: 'Allocation Criteria', href: '/allocation-criteria', roles: ['admin'] },
-      { label: 'Revenue Level Tiers', href: '/revenue-level-tiers', roles: ['admin'] },
-      { label: 'Staff Requirement Scenarios', href: '/staff-requirement-scenarios', roles: ['admin'] },
+      { label: 'Clinic-Wide Preferences', href: '/clinic-preferences', roles: ['admin'] },
+      { label: 'Specific Preferences', href: '/staff-requirement-scenarios', roles: ['admin'] },
+      { label: 'Branch Types', href: '/branch-types', roles: ['admin'] },
+      { label: 'Staff Groups', href: '/staff-groups', roles: ['admin'] },
+      { label: 'Rotation Staff Position Mapping', href: '/staff-groups/rotation-staff-position-mapping', roles: ['admin'] },
     ],
   },
   {
@@ -59,6 +63,7 @@ const navCategories: NavCategory[] = [
       { label: 'Users', href: '/users', roles: ['admin'] },
       { label: 'Zone Configuration', href: '/zone-configuration', roles: ['admin'] },
       { label: 'System Settings', href: '/system-settings', roles: ['admin'] },
+      { label: 'Test Data Generation', href: '/test-data', roles: ['admin'] },
     ],
   },
 ];

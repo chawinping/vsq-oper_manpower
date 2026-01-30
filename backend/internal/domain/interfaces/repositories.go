@@ -3,8 +3,9 @@ package interfaces
 import (
 	"time"
 
-	"github.com/google/uuid"
 	"vsq-oper-manpower/backend/internal/domain/models"
+
+	"github.com/google/uuid"
 )
 
 type UserRepository interface {
@@ -37,10 +38,10 @@ type StaffRepository interface {
 }
 
 type StaffFilters struct {
-	StaffType          *models.StaffType
-	BranchID           *uuid.UUID
-	PositionID         *uuid.UUID
-	AreaOfOperationID  *uuid.UUID
+	StaffType         *models.StaffType
+	BranchID          *uuid.UUID
+	PositionID        *uuid.UUID
+	AreaOfOperationID *uuid.UUID
 }
 
 type PositionRepository interface {
@@ -210,6 +211,7 @@ type DoctorPreferenceRepository interface {
 	GetByDoctorID(doctorID uuid.UUID) ([]*models.DoctorPreference, error)
 	GetByDoctorAndBranch(doctorID uuid.UUID, branchID uuid.UUID) ([]*models.DoctorPreference, error)
 	GetActiveByDoctorID(doctorID uuid.UUID) ([]*models.DoctorPreference, error)
+	GetRotationStaffRequirements(doctorID uuid.UUID, branchID *uuid.UUID, dayOfWeek *int) ([]*models.DoctorPreference, error)
 	Update(preference *models.DoctorPreference) error
 	Delete(id uuid.UUID) error
 	DeleteByDoctorID(doctorID uuid.UUID) error
@@ -270,17 +272,6 @@ type DoctorScheduleOverrideRepository interface {
 	DeleteByDoctorID(doctorID uuid.UUID) error
 }
 
-type AllocationSuggestionRepository interface {
-	Create(suggestion *models.AllocationSuggestion) error
-	GetByID(id uuid.UUID) (*models.AllocationSuggestion, error)
-	GetByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.AllocationSuggestion, error)
-	GetByStatus(status models.SuggestionStatus) ([]*models.AllocationSuggestion, error)
-	Update(suggestion *models.AllocationSuggestion) error
-	Delete(id uuid.UUID) error
-	BulkCreate(suggestions []*models.AllocationSuggestion) error
-	GetPendingByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.AllocationSuggestion, error)
-}
-
 type BranchWeeklyRevenueRepository interface {
 	Create(revenue *models.BranchWeeklyRevenue) error
 	Update(revenue *models.BranchWeeklyRevenue) error
@@ -299,6 +290,39 @@ type BranchConstraintsRepository interface {
 	GetByBranchIDAndDayOfWeek(branchID uuid.UUID, dayOfWeek int) (*models.BranchConstraints, error)
 	Delete(id uuid.UUID) error
 	BulkUpsert(constraints []*models.BranchConstraints) error
+	// Load staff group requirements for constraints
+	LoadStaffGroupRequirements(constraints []*models.BranchConstraints) error
+	// Bulk upsert with staff group requirements
+	BulkUpsertWithStaffGroups(constraints []*models.BranchConstraints) error
+}
+
+type BranchConstraintStaffGroupRepository interface {
+	Create(sg *models.BranchConstraintStaffGroup) error
+	GetByConstraintID(constraintID uuid.UUID) ([]*models.BranchConstraintStaffGroup, error)
+	GetByBranchID(branchID uuid.UUID) ([]*models.BranchConstraintStaffGroup, error)
+	Delete(id uuid.UUID) error
+	DeleteByConstraintID(constraintID uuid.UUID) error
+	BulkUpsert(staffGroups []*models.BranchConstraintStaffGroup) error
+}
+
+type BranchTypeConstraintsRepository interface {
+	GetByID(id uuid.UUID) (*models.BranchTypeConstraints, error)
+	GetByBranchTypeID(branchTypeID uuid.UUID) ([]*models.BranchTypeConstraints, error)
+	GetByBranchTypeIDAndDayOfWeek(branchTypeID uuid.UUID, dayOfWeek int) (*models.BranchTypeConstraints, error)
+	Delete(id uuid.UUID) error
+	// Load staff group requirements for constraints
+	LoadStaffGroupRequirements(constraints []*models.BranchTypeConstraints) error
+	// Bulk upsert with staff group requirements
+	BulkUpsertWithStaffGroups(constraints []*models.BranchTypeConstraints) error
+}
+
+type BranchTypeConstraintStaffGroupRepository interface {
+	Create(sg *models.BranchTypeConstraintStaffGroup) error
+	GetByConstraintID(constraintID uuid.UUID) ([]*models.BranchTypeConstraintStaffGroup, error)
+	GetByBranchTypeID(branchTypeID uuid.UUID) ([]*models.BranchTypeConstraintStaffGroup, error)
+	Delete(id uuid.UUID) error
+	DeleteByConstraintID(constraintID uuid.UUID) error
+	BulkUpsert(staffGroups []*models.BranchTypeConstraintStaffGroup) error
 }
 
 type RevenueLevelTierRepository interface {
@@ -332,3 +356,95 @@ type ScenarioPositionRequirementRepository interface {
 	BulkUpsert(requirements []*models.ScenarioPositionRequirement) error
 }
 
+type ScenarioSpecificStaffRequirementRepository interface {
+	Create(requirement *models.ScenarioSpecificStaffRequirement) error
+	GetByID(id uuid.UUID) (*models.ScenarioSpecificStaffRequirement, error)
+	GetByScenarioID(scenarioID uuid.UUID) ([]*models.ScenarioSpecificStaffRequirement, error)
+	Delete(id uuid.UUID) error
+	DeleteByScenarioID(scenarioID uuid.UUID) error
+	BulkUpsert(requirements []*models.ScenarioSpecificStaffRequirement) error
+}
+
+type ClinicWidePreferenceRepository interface {
+	Create(preference *models.ClinicWidePreference) error
+	GetByID(id uuid.UUID) (*models.ClinicWidePreference, error)
+	Update(preference *models.ClinicWidePreference) error
+	Delete(id uuid.UUID) error
+	List(filters models.ClinicPreferenceFilters) ([]*models.ClinicWidePreference, error)
+	GetByCriteriaTypeAndValue(criteriaType models.ClinicPreferenceCriteriaType, value float64) ([]*models.ClinicWidePreference, error)
+}
+
+type PreferencePositionRequirementRepository interface {
+	Create(requirement *models.PreferencePositionRequirement) error
+	GetByID(id uuid.UUID) (*models.PreferencePositionRequirement, error)
+	GetByPreferenceID(preferenceID uuid.UUID) ([]*models.PreferencePositionRequirement, error)
+	GetByPreferenceAndPosition(preferenceID, positionID uuid.UUID) (*models.PreferencePositionRequirement, error)
+	Update(requirement *models.PreferencePositionRequirement) error
+	Delete(id uuid.UUID) error
+	DeleteByPreferenceID(preferenceID uuid.UUID) error
+	BulkUpsert(requirements []*models.PreferencePositionRequirement) error
+}
+
+type BranchTypeRepository interface {
+	Create(branchType *models.BranchType) error
+	GetByID(id uuid.UUID) (*models.BranchType, error)
+	List() ([]*models.BranchType, error)
+	Update(branchType *models.BranchType) error
+	Delete(id uuid.UUID) error
+}
+
+type StaffGroupRepository interface {
+	Create(staffGroup *models.StaffGroup) error
+	GetByID(id uuid.UUID) (*models.StaffGroup, error)
+	List() ([]*models.StaffGroup, error)
+	GetByPositionID(positionID uuid.UUID) ([]*models.StaffGroup, error)
+	Update(staffGroup *models.StaffGroup) error
+	Delete(id uuid.UUID) error
+}
+
+type StaffGroupPositionRepository interface {
+	Create(sgp *models.StaffGroupPosition) error
+	GetByID(id uuid.UUID) (*models.StaffGroupPosition, error)
+	GetByStaffGroupID(staffGroupID uuid.UUID) ([]*models.StaffGroupPosition, error)
+	GetByPositionID(positionID uuid.UUID) ([]*models.StaffGroupPosition, error)
+	Delete(id uuid.UUID) error
+	DeleteByStaffGroupAndPosition(staffGroupID uuid.UUID, positionID uuid.UUID) error
+}
+
+type BranchTypeStaffGroupRequirementRepository interface {
+	Create(requirement *models.BranchTypeStaffGroupRequirement) error
+	GetByID(id uuid.UUID) (*models.BranchTypeStaffGroupRequirement, error)
+	GetByBranchTypeID(branchTypeID uuid.UUID) ([]*models.BranchTypeStaffGroupRequirement, error)
+	GetByStaffGroupID(staffGroupID uuid.UUID) ([]*models.BranchTypeStaffGroupRequirement, error)
+	Update(requirement *models.BranchTypeStaffGroupRequirement) error
+	Delete(id uuid.UUID) error
+	BulkUpsert(requirements []*models.BranchTypeStaffGroupRequirement) error
+}
+
+type SpecificPreferenceRepository interface {
+	Create(preference *models.SpecificPreference) error
+	GetByID(id uuid.UUID) (*models.SpecificPreference, error)
+	List(filters SpecificPreferenceFilters) ([]*models.SpecificPreference, error)
+	GetMatchingPreferences(branchID *uuid.UUID, doctorID *uuid.UUID, dayOfWeek *int) ([]*models.SpecificPreference, error)
+	Update(preference *models.SpecificPreference) error
+	Delete(id uuid.UUID) error
+}
+
+type SpecificPreferenceFilters struct {
+	BranchID  *uuid.UUID
+	DoctorID  *uuid.UUID
+	DayOfWeek *int
+	IsActive  *bool
+}
+
+type RotationStaffBranchPositionRepository interface {
+	Create(mapping *models.RotationStaffBranchPosition) error
+	GetByID(id uuid.UUID) (*models.RotationStaffBranchPosition, error)
+	List() ([]*models.RotationStaffBranchPosition, error)
+	GetByStaffID(rotationStaffID uuid.UUID) ([]*models.RotationStaffBranchPosition, error)
+	GetByPositionID(branchPositionID uuid.UUID) ([]*models.RotationStaffBranchPosition, error)
+	GetByStaffAndPosition(rotationStaffID uuid.UUID, branchPositionID uuid.UUID) (*models.RotationStaffBranchPosition, error)
+	Update(mapping *models.RotationStaffBranchPosition) error
+	Delete(id uuid.UUID) error
+	DeleteByStaffAndPosition(rotationStaffID uuid.UUID, branchPositionID uuid.UUID) error
+}

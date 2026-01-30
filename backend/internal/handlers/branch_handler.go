@@ -34,6 +34,7 @@ type CreateBranchRequest struct {
 	Name          string     `json:"name" binding:"required"`
 	Code          string     `json:"code" binding:"required"`
 	AreaManagerID *uuid.UUID `json:"area_manager_id,omitempty"`
+	BranchTypeID  *uuid.UUID `json:"branch_type_id,omitempty"`
 	Priority      int        `json:"priority"`
 }
 
@@ -59,6 +60,7 @@ func (h *BranchHandler) Create(c *gin.Context) {
 		Name:          req.Name,
 		Code:          req.Code,
 		AreaManagerID: req.AreaManagerID,
+		BranchTypeID:  req.BranchTypeID,
 		Priority:      req.Priority,
 	}
 
@@ -106,6 +108,7 @@ func (h *BranchHandler) Update(c *gin.Context) {
 		Name:          req.Name,
 		Code:          req.Code,
 		AreaManagerID: req.AreaManagerID,
+		BranchTypeID:  req.BranchTypeID,
 		Priority:      req.Priority,
 	}
 

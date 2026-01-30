@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"vsq-oper-manpower/backend/internal/domain/models"
 	"vsq-oper-manpower/backend/internal/repositories/postgres"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type BranchConfigHandler struct {
@@ -58,17 +59,17 @@ func (h *BranchConfigHandler) GetBranchConfig(c *gin.Context) {
 	for _, quota := range quotas {
 		position := positionMap[quota.PositionID]
 		quotaResponse = append(quotaResponse, map[string]interface{}{
-			"id":                quota.ID,
-			"position_id":       quota.PositionID,
-			"position_name":     getPositionName(position),
-			"designated_quota":  quota.DesignatedQuota,
-			"minimum_required":  quota.MinimumRequired,
-			"is_active":         quota.IsActive,
+			"id":               quota.ID,
+			"position_id":      quota.PositionID,
+			"position_name":    getPositionName(position),
+			"designated_quota": quota.DesignatedQuota,
+			"minimum_required": quota.MinimumRequired,
+			"is_active":        quota.IsActive,
 		})
 	}
 
-	// Get constraints
-	constraints, err := h.repos.BranchConstraints.GetByBranchID(branchID)
+	// Get constraints with inheritance resolution
+	constraints, err := h.getResolvedConstraints(branchID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -202,7 +203,7 @@ type WeeklyRevenueUpdate struct {
 	ExpectedRevenue float64 `json:"expected_revenue,omitempty"`     // Deprecated: Use SkinRevenue instead
 	SkinRevenue     float64 `json:"skin_revenue"`                   // Skin revenue (THB)
 	LSHMRevenue     float64 `json:"ls_hm_revenue"`                  // LS HM revenue (THB)
-	VitaminCases    int     `json:"vitamin_cases"`                   // Vitamin cases (count)
+	VitaminCases    int     `json:"vitamin_cases"`                  // Vitamin cases (count)
 	SlimPenCases    int     `json:"slim_pen_cases"`                 // Slim Pen cases (count)
 }
 
@@ -303,12 +304,12 @@ func (h *BranchConfigHandler) GetQuotas(c *gin.Context) {
 	for _, quota := range quotas {
 		position := positionMap[quota.PositionID]
 		quotaResponse = append(quotaResponse, map[string]interface{}{
-			"id":                quota.ID,
-			"position_id":       quota.PositionID,
-			"position_name":     getPositionName(position),
-			"designated_quota":  quota.DesignatedQuota,
-			"minimum_required":  quota.MinimumRequired,
-			"is_active":         quota.IsActive,
+			"id":               quota.ID,
+			"position_id":      quota.PositionID,
+			"position_name":    getPositionName(position),
+			"designated_quota": quota.DesignatedQuota,
+			"minimum_required": quota.MinimumRequired,
+			"is_active":        quota.IsActive,
 		})
 	}
 
@@ -338,12 +339,14 @@ type UpdateConstraintsRequest struct {
 	Constraints []ConstraintUpdate `json:"constraints" binding:"required"`
 }
 
+type StaffGroupRequirement struct {
+	StaffGroupID uuid.UUID `json:"staff_group_id" binding:"required"`
+	MinimumCount int       `json:"minimum_count" binding:"required,min=0"`
+}
+
 type ConstraintUpdate struct {
-	DayOfWeek         int `json:"day_of_week" binding:"required"` // 0=Sunday, 6=Saturday
-	MinFrontStaff     int `json:"min_front_staff" binding:"required"`
-	MinManagers       int `json:"min_managers" binding:"required"`
-	MinDoctorAssistant int `json:"min_doctor_assistant" binding:"required"`
-	MinTotalStaff     int `json:"min_total_staff" binding:"required"`
+	DayOfWeek              int                     `json:"day_of_week" binding:"required"` // 0=Sunday, 6=Saturday
+	StaffGroupRequirements []StaffGroupRequirement `json:"staff_group_requirements" binding:"required"`
 }
 
 func (h *BranchConfigHandler) UpdateConstraints(c *gin.Context) {
@@ -360,34 +363,73 @@ func (h *BranchConfigHandler) UpdateConstraints(c *gin.Context) {
 		return
 	}
 
+	// Get branch to check for branch type
+	branch, err := h.repos.Branch.GetByID(branchID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if branch == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Branch not found"})
+		return
+	}
+
 	// Validate day_of_week and constraint values
 	for _, constraint := range req.Constraints {
 		if constraint.DayOfWeek < 0 || constraint.DayOfWeek > 6 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "day_of_week must be between 0 and 6"})
 			return
 		}
-		if constraint.MinFrontStaff < 0 || constraint.MinManagers < 0 || constraint.MinDoctorAssistant < 0 || constraint.MinTotalStaff < 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "constraint values cannot be negative"})
-			return
+		// Validate staff group requirements
+		for _, sgReq := range constraint.StaffGroupRequirements {
+			if sgReq.MinimumCount < 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "minimum_count cannot be negative"})
+				return
+			}
+			// Verify staff group exists
+			staffGroup, err := h.repos.StaffGroup.GetByID(sgReq.StaffGroupID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify staff group: " + err.Error()})
+				return
+			}
+			if staffGroup == nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Staff group not found: " + sgReq.StaffGroupID.String()})
+				return
+			}
+			if !staffGroup.IsActive {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Staff group is not active: " + staffGroup.Name})
+				return
+			}
 		}
 	}
 
-	// Convert to models
+	// Convert to models and mark as overridden
 	constraints := []*models.BranchConstraints{}
 	for _, cons := range req.Constraints {
-		constraints = append(constraints, &models.BranchConstraints{
-			ID:                uuid.New(),
-			BranchID:          branchID,
-			DayOfWeek:         cons.DayOfWeek,
-			MinFrontStaff:     cons.MinFrontStaff,
-			MinManagers:       cons.MinManagers,
-			MinDoctorAssistant: cons.MinDoctorAssistant,
-			MinTotalStaff:     cons.MinTotalStaff,
-		})
+		constraint := &models.BranchConstraints{
+			ID:                        uuid.New(),
+			BranchID:                  branchID,
+			DayOfWeek:                 cons.DayOfWeek,
+			IsOverridden:              true,                // Mark as overridden when explicitly set
+			InheritedFromBranchTypeID: branch.BranchTypeID, // Track which branch type this overrides
+		}
+
+		// Convert staff group requirements
+		if len(cons.StaffGroupRequirements) > 0 {
+			constraint.StaffGroupRequirements = make([]*models.BranchConstraintStaffGroup, len(cons.StaffGroupRequirements))
+			for i, sgReq := range cons.StaffGroupRequirements {
+				constraint.StaffGroupRequirements[i] = &models.BranchConstraintStaffGroup{
+					StaffGroupID: sgReq.StaffGroupID,
+					MinimumCount: sgReq.MinimumCount,
+				}
+			}
+		}
+
+		constraints = append(constraints, constraint)
 	}
 
-	// Bulk upsert
-	if err := h.repos.BranchConstraints.BulkUpsert(constraints); err != nil {
+	// Bulk upsert with staff groups
+	if err := h.repos.BranchConstraints.BulkUpsertWithStaffGroups(constraints); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -404,13 +446,111 @@ func (h *BranchConfigHandler) GetConstraints(c *gin.Context) {
 		return
 	}
 
-	constraints, err := h.repos.BranchConstraints.GetByBranchID(branchID)
+	constraints, err := h.getResolvedConstraints(branchID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"constraints": constraints})
+}
+
+// getResolvedConstraints returns constraints for a branch with inheritance resolution
+// Priority: Overridden branch constraints > Branch type constraints > Defaults (all zeros)
+func (h *BranchConfigHandler) getResolvedConstraints(branchID uuid.UUID) ([]*models.BranchConstraints, error) {
+	// Get branch to check for branch type
+	branch, err := h.repos.Branch.GetByID(branchID)
+	if err != nil {
+		return nil, err
+	}
+	if branch == nil {
+		return nil, fmt.Errorf("branch not found")
+	}
+
+	// Get branch-specific constraints (overridden ones)
+	branchConstraints, err := h.repos.BranchConstraints.GetByBranchID(branchID)
+	if err != nil {
+		return nil, err
+	}
+	// Load staff group requirements for branch constraints
+	if err := h.repos.BranchConstraints.LoadStaffGroupRequirements(branchConstraints); err != nil {
+		return nil, fmt.Errorf("failed to load staff group requirements: %w", err)
+	}
+
+	// Create a map of overridden constraints by day_of_week
+	overriddenMap := make(map[int]*models.BranchConstraints)
+	for _, constraint := range branchConstraints {
+		if constraint.IsOverridden {
+			overriddenMap[constraint.DayOfWeek] = constraint
+		}
+	}
+
+	// Get branch type constraints if branch has a branch type
+	var branchTypeConstraints []*models.BranchTypeConstraints
+	if branch.BranchTypeID != nil {
+		branchTypeConstraints, err = h.repos.BranchTypeConstraints.GetByBranchTypeID(*branch.BranchTypeID)
+		if err != nil {
+			return nil, err
+		}
+		// Load staff group requirements for branch type constraints
+		if err := h.repos.BranchTypeConstraints.LoadStaffGroupRequirements(branchTypeConstraints); err != nil {
+			return nil, fmt.Errorf("failed to load staff group requirements: %w", err)
+		}
+	}
+
+	// Create a map of branch type constraints by day_of_week
+	branchTypeMap := make(map[int]*models.BranchTypeConstraints)
+	for _, constraint := range branchTypeConstraints {
+		branchTypeMap[constraint.DayOfWeek] = constraint
+	}
+
+	// Build resolved constraints for all 7 days
+	resolvedConstraints := make([]*models.BranchConstraints, 7)
+	for dayOfWeek := 0; dayOfWeek < 7; dayOfWeek++ {
+		constraint := &models.BranchConstraints{
+			ID:        uuid.New(),
+			BranchID:  branchID,
+			DayOfWeek: dayOfWeek,
+		}
+
+		// Priority 1: Overridden branch constraint
+		if overridden, exists := overriddenMap[dayOfWeek]; exists {
+			// Copy staff group requirements from overridden constraint
+			if overridden.StaffGroupRequirements != nil && len(overridden.StaffGroupRequirements) > 0 {
+				constraint.StaffGroupRequirements = make([]*models.BranchConstraintStaffGroup, len(overridden.StaffGroupRequirements))
+				for i, sg := range overridden.StaffGroupRequirements {
+					constraint.StaffGroupRequirements[i] = &models.BranchConstraintStaffGroup{
+						StaffGroupID: sg.StaffGroupID,
+						MinimumCount: sg.MinimumCount,
+					}
+				}
+			}
+			constraint.IsOverridden = true
+			constraint.InheritedFromBranchTypeID = overridden.InheritedFromBranchTypeID
+		} else if branchType, exists := branchTypeMap[dayOfWeek]; exists {
+			// Priority 2: Branch type constraint - copy staff group requirements
+			if branchType.StaffGroupRequirements != nil && len(branchType.StaffGroupRequirements) > 0 {
+				constraint.StaffGroupRequirements = make([]*models.BranchConstraintStaffGroup, len(branchType.StaffGroupRequirements))
+				for i, sg := range branchType.StaffGroupRequirements {
+					constraint.StaffGroupRequirements[i] = &models.BranchConstraintStaffGroup{
+						StaffGroupID: sg.StaffGroupID,
+						MinimumCount: sg.MinimumCount,
+					}
+				}
+			}
+			constraint.IsOverridden = false
+			constraint.InheritedFromBranchTypeID = branch.BranchTypeID
+		} else {
+			// Priority 3: Defaults (empty staff group requirements)
+			constraint.StaffGroupRequirements = []*models.BranchConstraintStaffGroup{}
+			constraint.IsOverridden = false
+			constraint.InheritedFromBranchTypeID = branch.BranchTypeID
+		}
+
+		resolvedConstraints[dayOfWeek] = constraint
+	}
+
+	return resolvedConstraints, nil
 }
 
 // Helper function to get position name

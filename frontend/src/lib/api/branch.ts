@@ -5,6 +5,15 @@ export interface Branch {
   name: string;
   code: string;
   area_manager_id?: string;
+  branch_type_id?: string;
+  branch_type?: {
+    id: string;
+    name: string;
+    description?: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  };
   priority: number;
   created_at: string;
   updated_at: string;
@@ -14,6 +23,7 @@ export interface CreateBranchRequest {
   name: string;
   code: string;
   area_manager_id?: string;
+  branch_type_id?: string;
   priority?: number;
 }
 

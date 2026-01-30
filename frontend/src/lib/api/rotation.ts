@@ -166,3 +166,4 @@ export const rotationApi = {
     } as SuggestionsResponse;
   },
 };
+

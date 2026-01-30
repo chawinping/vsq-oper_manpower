@@ -157,14 +157,6 @@ func (h *PositionHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	suggestionCountQuery := `SELECT COUNT(*) FROM allocation_suggestions WHERE position_id = $1`
-	var suggestionCount int
-	err = h.db.QueryRow(suggestionCountQuery, id).Scan(&suggestionCount)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
 	scenarioCountQuery := `SELECT COUNT(*) FROM scenario_position_requirements WHERE position_id = $1`
 	var scenarioCount int
 	err = h.db.QueryRow(scenarioCountQuery, id).Scan(&scenarioCount)
@@ -173,10 +165,10 @@ func (h *PositionHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	totalOtherAssociations := staffCount + ruleCount + suggestionCount + scenarioCount
+	totalOtherAssociations := staffCount + ruleCount + scenarioCount
 	if totalOtherAssociations > 0 {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": fmt.Sprintf("Cannot delete position: position is associated with %d staff member(s), %d allocation rule(s), %d suggestion(s), and %d scenario requirement(s). Please remove all associations before deleting.", staffCount, ruleCount, suggestionCount, scenarioCount),
+			"error": fmt.Sprintf("Cannot delete position: position is associated with %d staff member(s), %d allocation rule(s), and %d scenario requirement(s). Please remove all associations before deleting.", staffCount, ruleCount, scenarioCount),
 		})
 		return
 	}
@@ -196,7 +188,6 @@ type PositionAssociations struct {
 	QuotaCount              int                      `json:"quota_count"`
 	Quotas                  []PositionQuotaAssociation `json:"quotas"`
 	AllocationRuleCount     int                       `json:"allocation_rule_count"`
-	SuggestionCount         int                       `json:"suggestion_count"`
 	ScenarioRequirementCount int                      `json:"scenario_requirement_count"`
 	TotalCount              int                       `json:"total_count"`
 }
@@ -279,14 +270,6 @@ func (h *PositionHandler) GetAssociations(c *gin.Context) {
 		return
 	}
 
-	// Get suggestion count
-	suggestionCountQuery := `SELECT COUNT(*) FROM allocation_suggestions WHERE position_id = $1`
-	err = h.db.QueryRow(suggestionCountQuery, id).Scan(&associations.SuggestionCount)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
 	// Get scenario requirement count
 	scenarioCountQuery := `SELECT COUNT(*) FROM scenario_position_requirements WHERE position_id = $1`
 	err = h.db.QueryRow(scenarioCountQuery, id).Scan(&associations.ScenarioRequirementCount)
@@ -296,7 +279,7 @@ func (h *PositionHandler) GetAssociations(c *gin.Context) {
 	}
 
 	associations.TotalCount = associations.StaffCount + associations.QuotaCount + 
-		associations.AllocationRuleCount + associations.SuggestionCount + associations.ScenarioRequirementCount
+		associations.AllocationRuleCount + associations.ScenarioRequirementCount
 
 	c.JSON(http.StatusOK, gin.H{"associations": associations})
 }

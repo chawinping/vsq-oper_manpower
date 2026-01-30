@@ -47,24 +47,29 @@ export interface WeeklyRevenueUpdate {
   slim_pen_cases: number; // Slim Pen cases (count)
 }
 
+export interface StaffGroupRequirement {
+  staff_group_id: string;
+  minimum_count: number;
+}
+
 export interface BranchConstraints {
   id?: string;
   branch_id: string;
   day_of_week: number; // 0=Sunday, 1=Monday, ..., 6=Saturday
-  min_front_staff: number; // Minimum front/counter staff (includes managers)
-  min_managers: number;
-  min_doctor_assistant: number; // Minimum doctor assistants
-  min_total_staff: number;
+  min_front_staff?: number; // DEPRECATED: Use staff_group_requirements instead
+  min_managers?: number; // DEPRECATED: Use staff_group_requirements instead
+  min_doctor_assistant?: number; // DEPRECATED: Use staff_group_requirements instead
+  min_total_staff?: number; // DEPRECATED: Use staff_group_requirements instead
+  inherited_from_branch_type_id?: string; // If set, this constraint is inherited from a branch type
+  is_overridden: boolean; // If true, this constraint overrides the branch type default
+  staff_group_requirements?: StaffGroupRequirement[]; // Staff group requirements
   created_at?: string;
   updated_at?: string;
 }
 
 export interface ConstraintsUpdate {
   day_of_week: number;
-  min_front_staff: number;
-  min_managers: number;
-  min_doctor_assistant: number;
-  min_total_staff: number;
+  staff_group_requirements: StaffGroupRequirement[];
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
