@@ -23,7 +23,10 @@ func NewOverviewHandler(repos *postgres.Repositories, overviewGenerator *allocat
 	}
 }
 
-// GetDayOverview returns overview for all branches on a specific day
+// GetDayOverview returns overview for specified branches on a specific day
+// Query params:
+//   - date: date in YYYY-MM-DD format (defaults to today)
+//   - branch_ids: comma-separated list of branch UUIDs (optional, defaults to all branches)
 func (h *OverviewHandler) GetDayOverview(c *gin.Context) {
 	dateStr := c.Query("date")
 	if dateStr == "" {
@@ -36,7 +39,37 @@ func (h *OverviewHandler) GetDayOverview(c *gin.Context) {
 		return
 	}
 
-	overview, err := h.overviewGenerator.GenerateDayOverview(date)
+	// Parse branch IDs if provided
+	var branchIDs []uuid.UUID
+	branchIDsStr := c.Query("branch_ids")
+	if branchIDsStr != "" {
+		// Split by comma and parse each UUID
+		parts := []string{}
+		current := ""
+		for _, char := range branchIDsStr {
+			if char == ',' {
+				if current != "" {
+					parts = append(parts, current)
+					current = ""
+				}
+			} else if char != ' ' {
+				current += string(char)
+			}
+		}
+		if current != "" {
+			parts = append(parts, current)
+		}
+		
+		branchIDs = make([]uuid.UUID, 0, len(parts))
+		for _, part := range parts {
+			id, err := uuid.Parse(part)
+			if err == nil {
+				branchIDs = append(branchIDs, id)
+			}
+		}
+	}
+
+	overview, err := h.overviewGenerator.GenerateDayOverview(date, branchIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

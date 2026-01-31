@@ -56,26 +56,68 @@ func DefaultCriteriaPriorityOrder() CriteriaPriorityOrder {
 
 // AllocationSuggestion represents a ranked suggestion for rotation staff allocation
 type AllocationSuggestion struct {
-	BranchID           uuid.UUID         `json:"branch_id"`
-	BranchName         string            `json:"branch_name"`
-	BranchCode         string            `json:"branch_code"`
-	PositionID         uuid.UUID         `json:"position_id"`
-	PositionName       string            `json:"position_name"`
-	Date               time.Time         `json:"date"`
-	PriorityScore      float64           `json:"priority_score"`
+	BranchID     uuid.UUID `json:"branch_id"`
+	BranchName   string    `json:"branch_name"`
+	BranchCode   string    `json:"branch_code"`
+	PositionID   uuid.UUID `json:"position_id"`
+	PositionName string    `json:"position_name"`
+	Date         time.Time `json:"date"`
+
+	// New scoring system
+	Group1Score    int            `json:"group1_score"` // Daily Staff Constraints - Minimum (negative)
+	Group2Score    int            `json:"group2_score"` // Position Quota - Minimum (negative)
+	Group3Score    int            `json:"group3_score"` // Position Quota - Preferred (positive)
+	ScoreBreakdown ScoreBreakdown `json:"score_breakdown"`
+
+	// Legacy fields (deprecated, kept for backward compatibility)
+	PriorityScore      float64           `json:"priority_score,omitempty"`
 	Reason             string            `json:"reason"`
 	SuggestedStaffID   *uuid.UUID        `json:"suggested_staff_id,omitempty"`
 	SuggestedStaffName string            `json:"suggested_staff_name,omitempty"`
-	CriteriaBreakdown  CriteriaBreakdown `json:"criteria_breakdown"`
+	CriteriaBreakdown  CriteriaBreakdown `json:"criteria_breakdown,omitempty"`
 }
 
 // CriteriaBreakdown shows the contribution of each criteria group to the final score
+// DEPRECATED: Use ScoreBreakdown instead
 type CriteriaBreakdown struct {
 	ZerothCriteriaScore float64 `json:"zeroth_criteria_score,omitempty"`
 	FirstCriteriaScore  float64 `json:"first_criteria_score"`
 	SecondCriteriaScore float64 `json:"second_criteria_score"`
 	ThirdCriteriaScore  float64 `json:"third_criteria_score"`
 	FourthCriteriaScore float64 `json:"fourth_criteria_score"`
+}
+
+// ScoreBreakdown shows detailed breakdown of scoring groups
+type ScoreBreakdown struct {
+	// Group 1 breakdown
+	PositionQuotaMinimum []PositionQuotaScore `json:"position_quota_minimum"`
+
+	// Group 2 breakdown
+	DailyConstraintsMinimum []StaffGroupScore `json:"daily_constraints_minimum"`
+
+	// Group 3 breakdown
+	PositionQuotaPreferred []PositionQuotaScore `json:"position_quota_preferred"`
+}
+
+// PositionQuotaScore represents scoring details for a position quota
+type PositionQuotaScore struct {
+	PositionID      uuid.UUID `json:"position_id"`
+	PositionName    string    `json:"position_name"`
+	MinimumRequired int       `json:"minimum_required,omitempty"`
+	PreferredQuota  int       `json:"preferred_quota,omitempty"`
+	CurrentCount    int       `json:"current_count"`
+	Shortage        int       `json:"shortage"`
+	Points          int       `json:"points"`
+}
+
+// StaffGroupScore represents scoring details for a staff group constraint
+type StaffGroupScore struct {
+	StaffGroupID   uuid.UUID `json:"staff_group_id"`
+	StaffGroupName string    `json:"staff_group_name"`
+	MinimumCount   int       `json:"minimum_count"`
+	ActualCount    int       `json:"actual_count"`
+	Shortage       int       `json:"shortage"`
+	Points         int       `json:"points"`
 }
 
 // GenerateRankedSuggestions generates ranked suggestions for rotation staff allocation
@@ -145,6 +187,19 @@ func (f *MultiCriteriaFilter) GenerateRankedSuggestions(
 			continue
 		}
 
+	// Calculate Group 1 and Group 2 scores once per branch (they apply to all positions)
+	group1Score, group1Breakdown, err := f.calculateGroup1Score(branchID, date)
+	if err != nil {
+		group1Score = 0
+		group1Breakdown = []StaffGroupScore{}
+	}
+
+	group2Score, group2Breakdown, err := f.calculateGroup2Score(branchID, date)
+	if err != nil {
+		group2Score = 0
+		group2Breakdown = []PositionQuotaScore{}
+	}
+
 		// Evaluate for each position that has a quota
 		for _, quota := range quotas {
 			if !quota.IsActive {
@@ -178,40 +233,40 @@ func (f *MultiCriteriaFilter) GenerateRankedSuggestions(
 			preferredShortage := quota.DesignatedQuota - currentStaffCount
 			minimumShortage := quota.MinimumRequired - currentStaffCount
 
-			// Skip if no shortage
+			// Skip if no shortage (neither minimum nor preferred)
 			if preferredShortage <= 0 && minimumShortage <= 0 {
 				continue
 			}
 
-			// Evaluate all criteria groups
+			// Calculate Group 3 (Position Quota - Preferred) - tracks excesses above preferred quota
+			// This is calculated per position and is informational only
+			group3Score := 0
+			group3Breakdown := []PositionQuotaScore{}
+			preferredExcess := currentStaffCount - quota.DesignatedQuota
+			if preferredExcess > 0 {
+				// Only count positions with actual staff number greater than preferred number
+				group3Score = +1 * preferredExcess
+				group3Breakdown = append(group3Breakdown, PositionQuotaScore{
+					PositionID:     quota.PositionID,
+					PositionName:   position.Name,
+					PreferredQuota: quota.DesignatedQuota,
+					CurrentCount:   currentStaffCount,
+					Shortage:       preferredExcess, // Represents excess amount (how much above preferred)
+					Points:         group3Score,
+				})
+			}
+
+			// Legacy criteria evaluation (kept for backward compatibility)
 			criteriaBreakdown := CriteriaBreakdown{}
-
-			// First criteria: Branch-level variables
-			firstScore, err := f.evaluateFirstCriteria(branchID, date)
-			if err != nil {
-				continue
-			}
+			firstScore, _ := f.evaluateFirstCriteria(branchID, date)
 			criteriaBreakdown.FirstCriteriaScore = firstScore
-
-			// Second criteria: Preferred staff shortage
-			secondScore := f.evaluateSecondCriteria(preferredShortage, quota.DesignatedQuota)
-			criteriaBreakdown.SecondCriteriaScore = secondScore
-
-			// Third criteria: Minimum staff shortage (critical priority)
-			thirdScore := f.evaluateThirdCriteria(minimumShortage, quota.MinimumRequired)
-			criteriaBreakdown.ThirdCriteriaScore = thirdScore
-
-			// Fourth criteria: Branch type staff groups
-			fourthScore, err := f.evaluateFourthCriteria(branchID, quota.PositionID, date)
-			if err != nil {
-				continue
-			}
+			criteriaBreakdown.SecondCriteriaScore = f.evaluateSecondCriteria(preferredShortage, quota.DesignatedQuota)
+			criteriaBreakdown.ThirdCriteriaScore = f.evaluateThirdCriteria(minimumShortage, quota.MinimumRequired)
+			fourthScore, _ := f.evaluateFourthCriteria(branchID, quota.PositionID, date)
 			criteriaBreakdown.FourthCriteriaScore = fourthScore
 
-			// Zeroth criteria: Doctor preferences (if enabled)
 			var zerothScore float64
 			if enableDoctorPreferences {
-				// Check if zeroth criteria is in priority order
 				hasZeroth := false
 				for _, criterionID := range priorityOrder.PriorityOrder {
 					if criterionID == CriterionZeroth {
@@ -220,10 +275,7 @@ func (f *MultiCriteriaFilter) GenerateRankedSuggestions(
 					}
 				}
 				if hasZeroth {
-					zerothScore, err = f.evaluateZerothCriteria(branchID, quota.PositionID, date)
-					if err != nil {
-						zerothScore = 0.0 // Default to 0 if evaluation fails
-					}
+					zerothScore, _ = f.evaluateZerothCriteria(branchID, quota.PositionID, date)
 					criteriaBreakdown.ZerothCriteriaScore = zerothScore
 				}
 			}
@@ -231,34 +283,38 @@ func (f *MultiCriteriaFilter) GenerateRankedSuggestions(
 			// Generate reason
 			reason := f.generateReason(criteriaBreakdown, preferredShortage, minimumShortage, quota, position)
 
-			// Create a map of criterion scores for easy lookup
+			// Calculate legacy priority score for backward compatibility
 			criteriaScores := map[string]float64{
 				CriterionZeroth: zerothScore,
 				CriterionFirst:  firstScore,
-				CriterionSecond: secondScore,
-				CriterionThird:  thirdScore,
+				CriterionSecond: criteriaBreakdown.SecondCriteriaScore,
+				CriterionThird:  criteriaBreakdown.ThirdCriteriaScore,
 				CriterionFourth: fourthScore,
 			}
-
-			// Calculate priority score based on lexicographic ordering
-			// Priority score is a composite value that ensures strict ordering
-			// We use a weighted sum where higher priority criteria have exponentially more weight
 			priorityScore := 0.0
-			multiplier := 10000.0 // Start with high multiplier for first priority
+			multiplier := 10000.0
 			for _, criterionID := range priorityOrder.PriorityOrder {
 				if score, exists := criteriaScores[criterionID]; exists {
 					priorityScore += score * multiplier
-					multiplier /= 10.0 // Each lower priority gets 10x less weight
+					multiplier /= 10.0
 				}
 			}
 
 			suggestion := &AllocationSuggestion{
-				BranchID:          branchID,
-				BranchName:        branch.Name,
-				BranchCode:        branch.Code,
-				PositionID:        quota.PositionID,
-				PositionName:      position.Name,
-				Date:              date,
+				BranchID:     branchID,
+				BranchName:   branch.Name,
+				BranchCode:   branch.Code,
+				PositionID:   quota.PositionID,
+				PositionName: position.Name,
+				Date:         date,
+				Group1Score:  group1Score,
+				Group2Score:  group2Score,
+				Group3Score:  group3Score,
+				ScoreBreakdown: ScoreBreakdown{
+					DailyConstraintsMinimum: group1Breakdown,
+					PositionQuotaMinimum:    group2Breakdown,
+					PositionQuotaPreferred:  group3Breakdown,
+				},
 				PriorityScore:     priorityScore,
 				Reason:            reason,
 				CriteriaBreakdown: criteriaBreakdown,
@@ -268,10 +324,26 @@ func (f *MultiCriteriaFilter) GenerateRankedSuggestions(
 		}
 	}
 
-	// Sort by priority score using lexicographic ordering (highest first)
-	// The priority score is constructed so that higher priority criteria dominate
+	// Sort using lexicographic ordering: Group 1 → Group 2 → Group 3 → Branch Code
+	// More negative scores = higher priority (more urgent)
 	sort.Slice(suggestions, func(i, j int) bool {
-		return suggestions[i].PriorityScore > suggestions[j].PriorityScore
+		// Primary: Group 1 Score (ascending - more negative = higher priority)
+		if suggestions[i].Group1Score != suggestions[j].Group1Score {
+			return suggestions[i].Group1Score < suggestions[j].Group1Score
+		}
+
+		// Secondary: Group 2 Score (ascending - more negative = higher priority)
+		if suggestions[i].Group2Score != suggestions[j].Group2Score {
+			return suggestions[i].Group2Score < suggestions[j].Group2Score
+		}
+
+		// Tertiary: Group 3 Score (descending - more positive = lower priority)
+		if suggestions[i].Group3Score != suggestions[j].Group3Score {
+			return suggestions[i].Group3Score > suggestions[j].Group3Score
+		}
+
+		// Deterministic tie-breaker: Branch Code (alphabetical)
+		return suggestions[i].BranchCode < suggestions[j].BranchCode
 	})
 
 	return suggestions, nil
@@ -630,6 +702,233 @@ func (f *MultiCriteriaFilter) evaluateFourthCriteria(
 	}
 
 	return maxScore, nil
+}
+
+// calculateGroup1Score calculates Group 1 score: Daily Staff Constraints - Minimum Shortage (negative points)
+func (f *MultiCriteriaFilter) calculateGroup1Score(
+	branchID uuid.UUID,
+	date time.Time,
+) (int, []StaffGroupScore, error) {
+	dayOfWeek := int(date.Weekday())
+
+	// Get branch to find branch type
+	branch, err := f.repos.Branch.GetByID(branchID)
+	if err != nil || branch == nil {
+		return 0, nil, err
+	}
+
+	// Get branch constraints for this day
+	constraint, err := f.repos.BranchConstraints.GetByBranchIDAndDayOfWeek(branchID, dayOfWeek)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	var staffGroupRequirements []*models.BranchConstraintStaffGroup
+
+	// If branch-specific constraint exists, use it
+	if constraint != nil {
+		// Load staff group requirements from branch constraint
+		if err := f.repos.BranchConstraints.LoadStaffGroupRequirements([]*models.BranchConstraints{constraint}); err != nil {
+			return 0, nil, err
+		}
+		staffGroupRequirements = constraint.StaffGroupRequirements
+	}
+	
+	// If no branch-specific constraints or they're empty, fallback to branch type constraints
+	if len(staffGroupRequirements) == 0 && branch.BranchTypeID != nil {
+		branchTypeConstraints, err := f.repos.BranchTypeConstraints.GetByBranchTypeID(*branch.BranchTypeID)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		// Find constraint for this day
+		var branchTypeConstraint *models.BranchTypeConstraints
+		for _, bt := range branchTypeConstraints {
+			if bt.DayOfWeek == dayOfWeek {
+				branchTypeConstraint = bt
+				break
+			}
+		}
+
+		if branchTypeConstraint != nil {
+			// Load staff group requirements from branch type constraint
+			if err := f.repos.BranchTypeConstraints.LoadStaffGroupRequirements([]*models.BranchTypeConstraints{branchTypeConstraint}); err != nil {
+				return 0, nil, err
+			}
+
+			// Convert BranchTypeConstraintStaffGroup to BranchConstraintStaffGroup
+			staffGroupRequirements = make([]*models.BranchConstraintStaffGroup, 0, len(branchTypeConstraint.StaffGroupRequirements))
+			for _, btReq := range branchTypeConstraint.StaffGroupRequirements {
+				staffGroupRequirements = append(staffGroupRequirements, &models.BranchConstraintStaffGroup{
+					StaffGroupID:  btReq.StaffGroupID,
+					MinimumCount:  btReq.MinimumCount,
+				})
+			}
+		}
+	}
+
+	// If no constraints found (neither branch-specific nor branch type), return 0
+	if len(staffGroupRequirements) == 0 {
+		return 0, nil, nil
+	}
+
+	// Get all staff groups for name lookup
+	staffGroups, err := f.repos.StaffGroup.List()
+	if err != nil {
+		return 0, nil, err
+	}
+	staffGroupMap := make(map[uuid.UUID]*models.StaffGroup)
+	for _, sg := range staffGroups {
+		staffGroupMap[sg.ID] = sg
+	}
+
+	totalScore := 0
+	breakdown := []StaffGroupScore{}
+
+	for _, req := range staffGroupRequirements {
+		actualCount, err := f.calculateStaffGroupCount(branchID, req.StaffGroupID, date)
+		if err != nil {
+			continue
+		}
+
+		shortage := req.MinimumCount - actualCount
+		if shortage > 0 {
+			points := -1 * shortage
+			totalScore += points
+
+			staffGroupName := ""
+			if sg, ok := staffGroupMap[req.StaffGroupID]; ok {
+				staffGroupName = sg.Name
+			}
+
+			breakdown = append(breakdown, StaffGroupScore{
+				StaffGroupID:   req.StaffGroupID,
+				StaffGroupName: staffGroupName,
+				MinimumCount:   req.MinimumCount,
+				ActualCount:    actualCount,
+				Shortage:       shortage,
+				Points:         points,
+			})
+		}
+	}
+
+	return totalScore, breakdown, nil
+}
+
+// calculateGroup2Score calculates Group 2 score: Position Quota - Minimum Shortage (negative points)
+func (f *MultiCriteriaFilter) calculateGroup2Score(
+	branchID uuid.UUID,
+	date time.Time,
+) (int, []PositionQuotaScore, error) {
+	quotas, err := f.repos.PositionQuota.GetByBranchID(branchID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	totalScore := 0
+	breakdown := []PositionQuotaScore{}
+
+	// Get all positions for name lookup
+	positions, err := f.repos.Position.List()
+	if err != nil {
+		return 0, nil, err
+	}
+	positionMap := make(map[uuid.UUID]*models.Position)
+	for _, p := range positions {
+		positionMap[p.ID] = p
+	}
+
+	for _, quota := range quotas {
+		if !quota.IsActive {
+			continue
+		}
+
+		currentCount, err := f.calculateCurrentStaffCount(branchID, quota.PositionID, date)
+		if err != nil {
+			continue
+		}
+
+		shortage := quota.MinimumRequired - currentCount
+		if shortage > 0 {
+			points := -1 * shortage
+			totalScore += points
+
+			positionName := ""
+			if pos, ok := positionMap[quota.PositionID]; ok {
+				positionName = pos.Name
+			}
+
+			breakdown = append(breakdown, PositionQuotaScore{
+				PositionID:      quota.PositionID,
+				PositionName:    positionName,
+				MinimumRequired: quota.MinimumRequired,
+				CurrentCount:    currentCount,
+				Shortage:        shortage,
+				Points:          points,
+			})
+		}
+	}
+
+	return totalScore, breakdown, nil
+}
+
+// calculateGroup3Score calculates Group 3 score: Position Quota - Preferred Excess (positive points)
+// Tracks positions with actual staff number greater than preferred number (informational only)
+func (f *MultiCriteriaFilter) calculateGroup3Score(
+	branchID uuid.UUID,
+	date time.Time,
+) (int, []PositionQuotaScore, error) {
+	quotas, err := f.repos.PositionQuota.GetByBranchID(branchID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// Get all positions for name lookup
+	positions, err := f.repos.Position.List()
+	if err != nil {
+		return 0, nil, err
+	}
+	positionMap := make(map[uuid.UUID]*models.Position)
+	for _, p := range positions {
+		positionMap[p.ID] = p
+	}
+
+	totalScore := 0
+	breakdown := []PositionQuotaScore{}
+
+	for _, quota := range quotas {
+		if !quota.IsActive {
+			continue
+		}
+
+		currentCount, err := f.calculateCurrentStaffCount(branchID, quota.PositionID, date)
+		if err != nil {
+			continue
+		}
+
+		// Only count positions with actual staff number greater than preferred number
+		excess := currentCount - quota.DesignatedQuota
+		if excess > 0 {
+			points := +1 * excess
+			totalScore += points
+
+			positionName := ""
+			if pos, ok := positionMap[quota.PositionID]; ok {
+				positionName = pos.Name
+			}
+
+			breakdown = append(breakdown, PositionQuotaScore{
+				PositionID:     quota.PositionID,
+				PositionName:   positionName,
+				PreferredQuota: quota.DesignatedQuota,
+				CurrentCount:   currentCount,
+				Shortage:       excess, // Represents excess amount (how much above preferred)
+				Points:         points,
+			})
+		}
+	}
+
+	return totalScore, breakdown, nil
 }
 
 // calculateCurrentStaffCount calculates current staff count (branch + rotation) for a position

@@ -2,15 +2,24 @@ package allocation
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
+// cacheEntry represents a cached overview entry
+type cacheEntry struct {
+	data      *DayOverview
+	expiresAt time.Time
+}
+
 // OverviewGenerator generates overview data for Area Managers
 type OverviewGenerator struct {
 	repos            *RepositoriesWrapper
 	quotaCalculator *QuotaCalculator
+	cache            sync.Map // map[string]*cacheEntry, key format: "date:branchIDs"
+	cacheTTL         time.Duration
 }
 
 // NewOverviewGenerator creates a new overview generator
@@ -18,7 +27,22 @@ func NewOverviewGenerator(repos *RepositoriesWrapper, quotaCalculator *QuotaCalc
 	return &OverviewGenerator{
 		repos:           repos,
 		quotaCalculator: quotaCalculator,
+		cacheTTL:        5 * time.Minute, // Cache for 5 minutes
 	}
+}
+
+// generateCacheKey generates a cache key from date and branch IDs
+func (g *OverviewGenerator) generateCacheKey(date time.Time, branchIDs []uuid.UUID) string {
+	dateStr := date.Format("2006-01-02")
+	if len(branchIDs) == 0 {
+		return fmt.Sprintf("overview:%s:all", dateStr)
+	}
+	// Create a deterministic key from sorted branch IDs
+	idsStr := ""
+	for _, id := range branchIDs {
+		idsStr += id.String() + ","
+	}
+	return fmt.Sprintf("overview:%s:%s", dateStr, idsStr)
 }
 
 // DayOverview represents overview data for all branches on a specific day
@@ -40,20 +64,33 @@ type MonthlyOverview struct {
 	AverageFulfillment float64 `json:"average_fulfillment"`
 }
 
-// GenerateDayOverview generates overview for all branches on a specific day
-func (g *OverviewGenerator) GenerateDayOverview(date time.Time) (*DayOverview, error) {
-	// Get all branches
-	branches, err := g.repos.Branch.List()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get branches: %w", err)
+// GenerateDayOverview generates overview for specified branches on a specific day
+// If branchIDs is nil or empty, calculates for all branches
+func (g *OverviewGenerator) GenerateDayOverview(date time.Time, branchIDs []uuid.UUID) (*DayOverview, error) {
+	// Check cache first
+	cacheKey := g.generateCacheKey(date, branchIDs)
+	if cached, found := g.cache.Load(cacheKey); found {
+		entry := cached.(*cacheEntry)
+		if time.Now().Before(entry.expiresAt) {
+			return entry.data, nil
+		}
+		// Cache expired, remove it
+		g.cache.Delete(cacheKey)
 	}
 
-	branchIDs := []uuid.UUID{}
-	for _, branch := range branches {
-		branchIDs = append(branchIDs, branch.ID)
+	// If no branch IDs provided, get all branches
+	if len(branchIDs) == 0 {
+		branches, err := g.repos.Branch.List()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get branches: %w", err)
+		}
+		branchIDs = make([]uuid.UUID, 0, len(branches))
+		for _, branch := range branches {
+			branchIDs = append(branchIDs, branch.ID)
+		}
 	}
 
-	// Calculate quota status for all branches
+	// Calculate quota status for specified branches
 	branchStatuses, err := g.quotaCalculator.CalculateBranchesQuotaStatus(branchIDs, date)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate quota statuses: %w", err)
@@ -67,12 +104,33 @@ func (g *OverviewGenerator) GenerateDayOverview(date time.Time) (*DayOverview, e
 		}
 	}
 
-	return &DayOverview{
+	overview := &DayOverview{
 		Date:              date,
 		BranchStatuses:    branchStatuses,
 		TotalBranches:     len(branchStatuses),
 		BranchesWithShortage: branchesWithShortage,
-	}, nil
+	}
+
+	// Cache the result
+	g.cache.Store(cacheKey, &cacheEntry{
+		data:      overview,
+		expiresAt: time.Now().Add(g.cacheTTL),
+	})
+
+	return overview, nil
+}
+
+// InvalidateCache invalidates the cache for a specific date
+func (g *OverviewGenerator) InvalidateCache(date time.Time) {
+	dateStr := date.Format("2006-01-02")
+	// Remove all cache entries for this date
+	g.cache.Range(func(key, value interface{}) bool {
+		keyStr := key.(string)
+		if len(keyStr) > len(dateStr) && keyStr[:len(dateStr)+9] == fmt.Sprintf("overview:%s:", dateStr) {
+			g.cache.Delete(key)
+		}
+		return true
+	})
 }
 
 // GenerateMonthlyOverview generates overview for a single branch across a month

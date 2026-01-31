@@ -74,8 +74,64 @@ export interface AssignmentSuggestion {
   reason: string;
 }
 
+export interface PositionQuotaScore {
+  position_id: string;
+  position_name: string;
+  minimum_required?: number;
+  preferred_quota?: number;
+  current_count: number;
+  shortage: number;
+  points: number;
+}
+
+export interface StaffGroupScore {
+  staff_group_id: string;
+  staff_group_name: string;
+  minimum_count: number;
+  actual_count: number;
+  shortage: number;
+  points: number;
+}
+
+export interface ScoreBreakdown {
+  position_quota_minimum: PositionQuotaScore[];
+  daily_constraints_minimum: StaffGroupScore[];
+  position_quota_preferred: PositionQuotaScore[];
+}
+
+export interface AllocationSuggestion {
+  id?: string;
+  branch_id: string;
+  branch_name?: string;
+  branch_code?: string;
+  position_id: string;
+  position_name?: string;
+  date: string;
+  
+  // New scoring system
+  group1_score: number;  // Position Quota - Minimum (negative)
+  group2_score: number;  // Daily Staff Constraints - Minimum (negative)
+  group3_score: number;  // Position Quota - Preferred (positive)
+  score_breakdown?: ScoreBreakdown;
+  
+  // Legacy fields (deprecated, kept for backward compatibility)
+  priority_score?: number;
+  reason: string;
+  suggested_staff_id?: string;
+  suggested_staff_name?: string;
+  rotation_staff_id?: string;
+  confidence?: number;
+  criteria_breakdown?: {
+    zeroth_criteria_score?: number;
+    first_criteria_score: number;
+    second_criteria_score: number;
+    third_criteria_score: number;
+    fourth_criteria_score: number;
+  };
+}
+
 export interface SuggestionsResponse {
-  suggestions: AssignmentSuggestion[];
+  suggestions: AssignmentSuggestion[] | AllocationSuggestion[];
 }
 
 export const rotationApi = {

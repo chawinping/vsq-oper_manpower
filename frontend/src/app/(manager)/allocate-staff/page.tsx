@@ -14,6 +14,15 @@ interface BranchSummary {
   currentStaffCount: number;
   preferredStaffCount: number;
   minimumStaffCount: number;
+  // Doctors assigned to this branch on this date
+  doctors: Array<{ id: string; name: string; code: string }>;
+  // Scoring group points and missing staff
+  group1Score: number;
+  group2Score: number;
+  group3Score: number;
+  group1MissingStaff: string[];
+  group2MissingStaff: string[];
+  group3MissingStaff: string[];
 }
 
 export default function AllocateStaffPage() {
@@ -24,6 +33,7 @@ export default function AllocateStaffPage() {
   const [branchSummaries, setBranchSummaries] = useState<Map<string, BranchSummary>>(new Map());
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [visibleCardCount, setVisibleCardCount] = useState(20); // Progressive loading: show 20 cards initially
   const [filter, setFilter] = useState({
     status: 'all' as 'all' | 'needs_attention' | 'critical' | 'ok',
     priority: 'all' as 'all' | 'high' | 'medium' | 'low',
@@ -52,36 +62,91 @@ export default function AllocateStaffPage() {
   };
 
   const loadBranchSummaries = async () => {
+    setLoading(true);
+    const branchIds = allBranchesSelected 
+      ? branches.map(b => b.id)
+      : selectedBranchIds;
+
+    if (branchIds.length === 0) {
+      setBranchSummaries(new Map());
+      setLoading(false);
+      return;
+    }
+
     try {
-      setLoading(true);
-      const branchIds = allBranchesSelected 
-        ? branches.map(b => b.id)
-        : selectedBranchIds;
-
-      if (branchIds.length === 0) {
-        setBranchSummaries(new Map());
-        return;
-      }
-
-      // Create summaries for selected branches
-      // TODO: Load actual staff counts from API when available
+      // Load actual staff counts from API - only for selected branches
+      const { overviewApi } = await import('@/lib/api/overview');
+      const overview = await overviewApi.getDayOverview(selectedDate, branchIds);
+      
       const summariesMap = new Map<string, BranchSummary>();
       
       branchIds.forEach(branchId => {
         const branch = branches.find(b => b.id === branchId);
         if (!branch) return;
 
-        summariesMap.set(branchId, {
-          branch,
-          currentStaffCount: 0, // TODO: Get from API
-          preferredStaffCount: 0, // TODO: Get from API
-          minimumStaffCount: 0, // TODO: Get from API
-        });
+        const branchStatus = overview.branch_statuses.find(bs => bs.branch_id === branchId);
+        
+        if (branchStatus) {
+          // Calculate totals across all positions
+          const totalAssigned = branchStatus.position_statuses.reduce((sum, pos) => sum + pos.total_assigned, 0);
+          const totalPreferred = branchStatus.position_statuses.reduce((sum, pos) => sum + pos.designated_quota, 0);
+          const totalMinimum = branchStatus.position_statuses.reduce((sum, pos) => sum + pos.minimum_required, 0);
+
+          summariesMap.set(branchId, {
+            branch,
+            currentStaffCount: totalAssigned,
+            preferredStaffCount: totalPreferred,
+            minimumStaffCount: totalMinimum,
+            doctors: branchStatus.doctors || [],
+            group1Score: branchStatus.group1_score || 0,
+            group2Score: branchStatus.group2_score || 0,
+            group3Score: branchStatus.group3_score || 0,
+            group1MissingStaff: branchStatus.group1_missing_staff || [],
+            group2MissingStaff: branchStatus.group2_missing_staff || [],
+            group3MissingStaff: branchStatus.group3_missing_staff || [],
+          });
+        } else {
+          // Fallback if no status found
+          summariesMap.set(branchId, {
+            branch,
+            currentStaffCount: 0,
+            preferredStaffCount: 0,
+            minimumStaffCount: 0,
+            doctors: [],
+            group1Score: 0,
+            group2Score: 0,
+            group3Score: 0,
+            group1MissingStaff: [],
+            group2MissingStaff: [],
+            group3MissingStaff: [],
+          });
+        }
       });
 
       setBranchSummaries(summariesMap);
     } catch (error) {
       console.error('Failed to load branch summaries:', error);
+      // Fallback: create empty summaries
+      const summariesMap = new Map<string, BranchSummary>();
+      branchIds.forEach(branchId => {
+        const branch = branches.find(b => b.id === branchId);
+        if (branch) {
+          summariesMap.set(branchId, {
+            branch,
+            currentStaffCount: 0,
+            preferredStaffCount: 0,
+            minimumStaffCount: 0,
+            doctors: [],
+            group1Score: 0,
+            group2Score: 0,
+            group3Score: 0,
+            group1MissingStaff: [],
+            group2MissingStaff: [],
+            group3MissingStaff: [],
+          });
+        }
+      });
+      setBranchSummaries(summariesMap);
     } finally {
       setLoading(false);
     }
@@ -123,6 +188,28 @@ export default function AllocateStaffPage() {
       return true;
     });
   }, [branches, allBranchesSelected, selectedBranchIds, filter]);
+
+  // Reset visible count when filtered branches change
+  useEffect(() => {
+    setVisibleCardCount(20);
+  }, [filteredBranches.length]);
+
+  // Progressive loading: load more cards when scrolling
+  useEffect(() => {
+    if (visibleCardCount >= filteredBranches.length) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setVisibleCardCount(prev => Math.min(prev + 10, filteredBranches.length));
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [visibleCardCount, filteredBranches.length]);
+
+  const visibleBranches = useMemo(() => {
+    return filteredBranches.slice(0, visibleCardCount);
+  }, [filteredBranches, visibleCardCount]);
 
   const summaryStats = useMemo(() => {
     const total = filteredBranches.length;
@@ -197,19 +284,28 @@ export default function AllocateStaffPage() {
           <div className="text-lg text-gray-600">No branches match the current filters</div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mt-6">
-          {filteredBranches.map(branch => {
-            const summary = branchSummaries.get(branch.id);
-            return (
-              <BranchCard
-                key={branch.id}
-                branch={branch}
-                summary={summary}
-                onClick={() => handleBranchClick(branch.id)}
-              />
-            );
-          })}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mt-6">
+            {visibleBranches.map(branch => {
+              const summary = branchSummaries.get(branch.id);
+              return (
+                <BranchCard
+                  key={branch.id}
+                  branch={branch}
+                  summary={summary}
+                  onClick={() => handleBranchClick(branch.id)}
+                />
+              );
+            })}
+          </div>
+          {visibleCardCount < filteredBranches.length && (
+            <div className="flex justify-center mt-6">
+              <div className="text-sm text-gray-600">
+                Showing {visibleCardCount} of {filteredBranches.length} branches...
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Branch Detail Drawer */}

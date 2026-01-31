@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -11,88 +12,93 @@ import (
 	"vsq-oper-manpower/backend/internal/usecases/doctor"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type Repositories struct {
-	User                        interfaces.UserRepository
-	Role                        interfaces.RoleRepository
-	Staff                       interfaces.StaffRepository
-	Position                    interfaces.PositionRepository
-	Branch                      interfaces.BranchRepository
-	EffectiveBranch             interfaces.EffectiveBranchRepository
-	Revenue                     interfaces.RevenueRepository
-	Schedule                    interfaces.ScheduleRepository
-	Rotation                    interfaces.RotationRepository
-	RotationStaffSchedule       interfaces.RotationStaffScheduleRepository
-	Settings                    interfaces.SettingsRepository
-	AllocationRule              interfaces.AllocationRuleRepository
-	AreaOfOperation             interfaces.AreaOfOperationRepository
-	Zone                        interfaces.ZoneRepository
-	AllocationCriteria          interfaces.AllocationCriteriaRepository
-	PositionQuota               interfaces.PositionQuotaRepository
-	Doctor                      interfaces.DoctorRepository
-	DoctorPreference            interfaces.DoctorPreferenceRepository
-	DoctorAssignment            interfaces.DoctorAssignmentRepository
-	DoctorOnOffDay              interfaces.DoctorOnOffDayRepository
-	DoctorDefaultSchedule       interfaces.DoctorDefaultScheduleRepository
-	DoctorWeeklyOffDay          interfaces.DoctorWeeklyOffDayRepository
-	DoctorScheduleOverride      interfaces.DoctorScheduleOverrideRepository
-	BranchWeeklyRevenue         interfaces.BranchWeeklyRevenueRepository
-	BranchConstraints           interfaces.BranchConstraintsRepository
-	RevenueLevelTier            interfaces.RevenueLevelTierRepository
-	StaffRequirementScenario           interfaces.StaffRequirementScenarioRepository
-	ScenarioPositionRequirement        interfaces.ScenarioPositionRequirementRepository
-	ScenarioSpecificStaffRequirement   interfaces.ScenarioSpecificStaffRequirementRepository
-	BranchType                         interfaces.BranchTypeRepository
-	StaffGroup                  interfaces.StaffGroupRepository
-	StaffGroupPosition          interfaces.StaffGroupPositionRepository
-	BranchTypeRequirement       interfaces.BranchTypeStaffGroupRequirementRepository
-	BranchTypeConstraints       interfaces.BranchTypeConstraintsRepository
-	SpecificPreference         interfaces.SpecificPreferenceRepository
-	ClinicWidePreference       interfaces.ClinicWidePreferenceRepository
-	PreferencePositionRequirement interfaces.PreferencePositionRequirementRepository
-	RotationStaffBranchPosition interfaces.RotationStaffBranchPositionRepository
+	User                             interfaces.UserRepository
+	Role                             interfaces.RoleRepository
+	Staff                            interfaces.StaffRepository
+	Position                         interfaces.PositionRepository
+	Branch                           interfaces.BranchRepository
+	EffectiveBranch                  interfaces.EffectiveBranchRepository
+	Revenue                          interfaces.RevenueRepository
+	Schedule                         interfaces.ScheduleRepository
+	Rotation                         interfaces.RotationRepository
+	RotationStaffSchedule            interfaces.RotationStaffScheduleRepository
+	Settings                         interfaces.SettingsRepository
+	AllocationRule                   interfaces.AllocationRuleRepository
+	AreaOfOperation                  interfaces.AreaOfOperationRepository
+	Zone                             interfaces.ZoneRepository
+	AllocationCriteria               interfaces.AllocationCriteriaRepository
+	PositionQuota                    interfaces.PositionQuotaRepository
+	Doctor                           interfaces.DoctorRepository
+	DoctorPreference                 interfaces.DoctorPreferenceRepository
+	DoctorAssignment                 interfaces.DoctorAssignmentRepository
+	DoctorOnOffDay                   interfaces.DoctorOnOffDayRepository
+	DoctorDefaultSchedule            interfaces.DoctorDefaultScheduleRepository
+	DoctorWeeklyOffDay               interfaces.DoctorWeeklyOffDayRepository
+	DoctorScheduleOverride           interfaces.DoctorScheduleOverrideRepository
+	BranchWeeklyRevenue              interfaces.BranchWeeklyRevenueRepository
+	BranchConstraints                interfaces.BranchConstraintsRepository
+	RevenueLevelTier                 interfaces.RevenueLevelTierRepository
+	StaffRequirementScenario         interfaces.StaffRequirementScenarioRepository
+	ScenarioPositionRequirement      interfaces.ScenarioPositionRequirementRepository
+	ScenarioSpecificStaffRequirement interfaces.ScenarioSpecificStaffRequirementRepository
+	BranchType                       interfaces.BranchTypeRepository
+	StaffGroup                       interfaces.StaffGroupRepository
+	StaffGroupPosition               interfaces.StaffGroupPositionRepository
+	BranchTypeRequirement            interfaces.BranchTypeStaffGroupRequirementRepository
+	BranchTypeConstraints            interfaces.BranchTypeConstraintsRepository
+	SpecificPreference               interfaces.SpecificPreferenceRepository
+	ClinicWidePreference             interfaces.ClinicWidePreferenceRepository
+	PreferencePositionRequirement    interfaces.PreferencePositionRequirementRepository
+	RotationStaffBranchPosition      interfaces.RotationStaffBranchPositionRepository
+	AllocationSuggestion             interfaces.AllocationSuggestionRepository
+	BranchQuotaSummary               interfaces.BranchQuotaSummaryRepository
 }
 
 func NewRepositories(db *sql.DB) *Repositories {
 	repos := &Repositories{
-		User:                        NewUserRepository(db),
-		Role:                        NewRoleRepository(db),
-		Staff:                       NewStaffRepository(db),
-		Position:                    NewPositionRepository(db),
-		Branch:                      NewBranchRepository(db),
-		EffectiveBranch:             NewEffectiveBranchRepository(db),
-		Revenue:                     NewRevenueRepository(db),
-		Schedule:                    NewScheduleRepository(db),
-		Rotation:                    NewRotationRepository(db),
-		RotationStaffSchedule:       NewRotationStaffScheduleRepository(db),
-		Settings:                    NewSettingsRepository(db),
-		AllocationRule:              NewAllocationRuleRepository(db),
-		AreaOfOperation:             NewAreaOfOperationRepository(db),
-		Zone:                        NewZoneRepository(db),
-		AllocationCriteria:          NewAllocationCriteriaRepository(db),
-		PositionQuota:               NewPositionQuotaRepository(db),
-		Doctor:                      NewDoctorRepository(db),
-		DoctorPreference:            NewDoctorPreferenceRepository(db),
-		DoctorOnOffDay:              NewDoctorOnOffDayRepository(db),
-		DoctorDefaultSchedule:       NewDoctorDefaultScheduleRepository(db),
-		DoctorWeeklyOffDay:          NewDoctorWeeklyOffDayRepository(db),
-		DoctorScheduleOverride:      NewDoctorScheduleOverrideRepository(db),
-		BranchWeeklyRevenue:         NewBranchWeeklyRevenueRepository(db),
-		BranchConstraints:           NewBranchConstraintsRepository(db),
-		RevenueLevelTier:            NewRevenueLevelTierRepository(db),
+		User:                             NewUserRepository(db),
+		Role:                             NewRoleRepository(db),
+		Staff:                            NewStaffRepository(db),
+		Position:                         NewPositionRepository(db),
+		Branch:                           NewBranchRepository(db),
+		EffectiveBranch:                  NewEffectiveBranchRepository(db),
+		Revenue:                          NewRevenueRepository(db),
+		Schedule:                         NewScheduleRepository(db),
+		Rotation:                         NewRotationRepository(db),
+		RotationStaffSchedule:            NewRotationStaffScheduleRepository(db),
+		Settings:                         NewSettingsRepository(db),
+		AllocationRule:                   NewAllocationRuleRepository(db),
+		AreaOfOperation:                  NewAreaOfOperationRepository(db),
+		Zone:                             NewZoneRepository(db),
+		AllocationCriteria:               NewAllocationCriteriaRepository(db),
+		PositionQuota:                    NewPositionQuotaRepository(db),
+		Doctor:                           NewDoctorRepository(db),
+		DoctorPreference:                 NewDoctorPreferenceRepository(db),
+		DoctorOnOffDay:                   NewDoctorOnOffDayRepository(db),
+		DoctorDefaultSchedule:            NewDoctorDefaultScheduleRepository(db),
+		DoctorWeeklyOffDay:               NewDoctorWeeklyOffDayRepository(db),
+		DoctorScheduleOverride:           NewDoctorScheduleOverrideRepository(db),
+		BranchWeeklyRevenue:              NewBranchWeeklyRevenueRepository(db),
+		BranchConstraints:                NewBranchConstraintsRepository(db),
+		RevenueLevelTier:                 NewRevenueLevelTierRepository(db),
 		StaffRequirementScenario:         NewStaffRequirementScenarioRepository(db),
 		ScenarioPositionRequirement:      NewScenarioPositionRequirementRepository(db),
-		ScenarioSpecificStaffRequirement:  NewScenarioSpecificStaffRequirementRepository(db),
+		ScenarioSpecificStaffRequirement: NewScenarioSpecificStaffRequirementRepository(db),
 		BranchType:                       NewBranchTypeRepository(db),
-		StaffGroup:                  NewStaffGroupRepository(db),
-		StaffGroupPosition:          NewStaffGroupPositionRepository(db),
-		BranchTypeRequirement:       NewBranchTypeStaffGroupRequirementRepository(db),
-		BranchTypeConstraints:       NewBranchTypeConstraintsRepository(db),
-		SpecificPreference:         NewSpecificPreferenceRepository(db),
-		ClinicWidePreference:       NewClinicWidePreferenceRepository(db),
-		PreferencePositionRequirement: NewPreferencePositionRequirementRepository(db),
-		RotationStaffBranchPosition: NewRotationStaffBranchPositionRepository(db),
+		StaffGroup:                       NewStaffGroupRepository(db),
+		StaffGroupPosition:               NewStaffGroupPositionRepository(db),
+		BranchTypeRequirement:            NewBranchTypeStaffGroupRequirementRepository(db),
+		BranchTypeConstraints:            NewBranchTypeConstraintsRepository(db),
+		SpecificPreference:               NewSpecificPreferenceRepository(db),
+		ClinicWidePreference:             NewClinicWidePreferenceRepository(db),
+		PreferencePositionRequirement:    NewPreferencePositionRequirementRepository(db),
+		RotationStaffBranchPosition:      NewRotationStaffBranchPositionRepository(db),
+		AllocationSuggestion:             NewAllocationSuggestionRepository(db),
+		BranchQuotaSummary:               NewBranchQuotaSummaryRepository(db),
 	}
 
 	// DoctorAssignment needs schedule repositories, so create it after them
@@ -418,7 +424,11 @@ func (r *staffRepository) List(filters interfaces.StaffFilters) ([]*models.Staff
 		argPos++
 	}
 	if filters.BranchID != nil {
-		query += ` AND s.branch_id = $` + strconv.Itoa(argPos)
+		// Include staff with direct branch_id match OR staff linked via staff_branches table
+		query += ` AND (s.branch_id = $` + strconv.Itoa(argPos) + ` OR EXISTS (
+			SELECT 1 FROM staff_branches sb 
+			WHERE sb.staff_id = s.id AND sb.branch_id = $` + strconv.Itoa(argPos) + `
+		))`
 		args = append(args, *filters.BranchID)
 		argPos++
 	}
@@ -1195,6 +1205,46 @@ func (r *scheduleRepository) GetByStaffID(staffID uuid.UUID, startDate, endDate 
 		schedules = append(schedules, schedule)
 	}
 	return schedules, rows.Err()
+}
+
+func (r *scheduleRepository) GetByStaffIDs(staffIDs []uuid.UUID, startDate, endDate time.Time) (map[uuid.UUID][]*models.StaffSchedule, error) {
+	if len(staffIDs) == 0 {
+		return make(map[uuid.UUID][]*models.StaffSchedule), nil
+	}
+
+	// Build query with ANY clause
+	query := `SELECT id, staff_id, branch_id, date, schedule_status, is_working_day, created_by, created_at 
+	          FROM staff_schedules WHERE staff_id = ANY($1) AND date >= $2 AND date <= $3 ORDER BY staff_id, date`
+	
+	rows, err := r.db.Query(query, pq.Array(staffIDs), startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID][]*models.StaffSchedule)
+	for rows.Next() {
+		schedule := &models.StaffSchedule{}
+		var scheduleStatus sql.NullString
+		if err := rows.Scan(
+			&schedule.ID, &schedule.StaffID, &schedule.BranchID, &schedule.Date,
+			&scheduleStatus, &schedule.IsWorkingDay, &schedule.CreatedBy, &schedule.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if scheduleStatus.Valid {
+			schedule.ScheduleStatus = models.ScheduleStatus(scheduleStatus.String)
+		} else {
+			// Fallback for old data
+			if schedule.IsWorkingDay {
+				schedule.ScheduleStatus = models.ScheduleStatusWorking
+			} else {
+				schedule.ScheduleStatus = models.ScheduleStatusOff
+			}
+		}
+		result[schedule.StaffID] = append(result[schedule.StaffID], schedule)
+	}
+	return result, rows.Err()
 }
 
 func (r *scheduleRepository) Update(schedule *models.StaffSchedule) error {
@@ -2604,7 +2654,6 @@ func (r *doctorOnOffDayRepository) GetByBranchAndDate(branchID uuid.UUID, date t
 	return day, err
 }
 
-
 // SpecificPreferenceRepository implementation
 type specificPreferenceRepository struct {
 	db *sql.DB
@@ -2845,5 +2894,121 @@ func (r *specificPreferenceRepository) Update(preference *models.SpecificPrefere
 func (r *specificPreferenceRepository) Delete(id uuid.UUID) error {
 	query := `DELETE FROM specific_preferences WHERE id = $1`
 	_, err := r.db.Exec(query, id)
+	return err
+}
+
+// BranchQuotaSummaryRepository implementation
+type branchQuotaSummaryRepository struct {
+	db *sql.DB
+}
+
+func NewBranchQuotaSummaryRepository(db *sql.DB) interfaces.BranchQuotaSummaryRepository {
+	return &branchQuotaSummaryRepository{db: db}
+}
+
+func (r *branchQuotaSummaryRepository) GetByBranchIDAndDate(branchID uuid.UUID, date time.Time) (*models.BranchQuotaSummary, error) {
+	query := `SELECT id, branch_id, date, total_designated, total_available, total_assigned, total_required,
+	         group1_score, group2_score, group3_score, group1_missing_staff, group2_missing_staff, group3_missing_staff,
+	         calculated_at, updated_at
+	         FROM branch_quota_daily_summary
+	         WHERE branch_id = $1 AND date = $2`
+	
+	summary := &models.BranchQuotaSummary{}
+	var group1Missing, group2Missing, group3Missing []byte
+	
+	err := r.db.QueryRow(query, branchID, date).Scan(
+		&summary.ID, &summary.BranchID, &summary.Date,
+		&summary.TotalDesignated, &summary.TotalAvailable, &summary.TotalAssigned, &summary.TotalRequired,
+		&summary.Group1Score, &summary.Group2Score, &summary.Group3Score,
+		&group1Missing, &group2Missing, &group3Missing,
+		&summary.CalculatedAt, &summary.UpdatedAt,
+	)
+	
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	
+	// Parse JSONB arrays
+	if len(group1Missing) > 0 {
+		if err := json.Unmarshal(group1Missing, &summary.Group1MissingStaff); err != nil {
+			summary.Group1MissingStaff = []string{}
+		}
+	}
+	if len(group2Missing) > 0 {
+		if err := json.Unmarshal(group2Missing, &summary.Group2MissingStaff); err != nil {
+			summary.Group2MissingStaff = []string{}
+		}
+	}
+	if len(group3Missing) > 0 {
+		if err := json.Unmarshal(group3Missing, &summary.Group3MissingStaff); err != nil {
+			summary.Group3MissingStaff = []string{}
+		}
+	}
+	
+	return summary, nil
+}
+
+func (r *branchQuotaSummaryRepository) GetByBranchIDsAndDate(branchIDs []uuid.UUID, date time.Time) ([]*models.BranchQuotaSummary, error) {
+	if len(branchIDs) == 0 {
+		return []*models.BranchQuotaSummary{}, nil
+	}
+	
+	query := `SELECT id, branch_id, date, total_designated, total_available, total_assigned, total_required,
+	         group1_score, group2_score, group3_score, group1_missing_staff, group2_missing_staff, group3_missing_staff,
+	         calculated_at, updated_at
+	         FROM branch_quota_daily_summary
+	         WHERE branch_id = ANY($1) AND date = $2
+	         ORDER BY branch_id`
+	
+	rows, err := r.db.Query(query, pq.Array(branchIDs), date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	summaries := []*models.BranchQuotaSummary{}
+	for rows.Next() {
+		summary := &models.BranchQuotaSummary{}
+		var group1Missing, group2Missing, group3Missing []byte
+		
+		if err := rows.Scan(
+			&summary.ID, &summary.BranchID, &summary.Date,
+			&summary.TotalDesignated, &summary.TotalAvailable, &summary.TotalAssigned, &summary.TotalRequired,
+			&summary.Group1Score, &summary.Group2Score, &summary.Group3Score,
+			&group1Missing, &group2Missing, &group3Missing,
+			&summary.CalculatedAt, &summary.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		
+		// Parse JSONB arrays
+		if len(group1Missing) > 0 {
+			json.Unmarshal(group1Missing, &summary.Group1MissingStaff)
+		}
+		if len(group2Missing) > 0 {
+			json.Unmarshal(group2Missing, &summary.Group2MissingStaff)
+		}
+		if len(group3Missing) > 0 {
+			json.Unmarshal(group3Missing, &summary.Group3MissingStaff)
+		}
+		
+		summaries = append(summaries, summary)
+	}
+	
+	return summaries, rows.Err()
+}
+
+func (r *branchQuotaSummaryRepository) Recalculate(branchID uuid.UUID, date time.Time) error {
+	query := `SELECT recalculate_branch_quota_summary($1, $2)`
+	_, err := r.db.Exec(query, branchID, date)
+	return err
+}
+
+func (r *branchQuotaSummaryRepository) RecalculateForDateRange(branchID uuid.UUID, startDate, endDate time.Time) error {
+	query := `SELECT recalculate_branch_quota_summary($1, generate_series($2::date, $3::date, '1 day'::interval)::date)`
+	_, err := r.db.Exec(query, branchID, startDate, endDate)
 	return err
 }

@@ -43,11 +43,6 @@ func (h *BranchTypeConstraintsHandler) GetByBranchTypeID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"constraints": constraints})
 }
 
-type StaffGroupRequirement struct {
-	StaffGroupID uuid.UUID `json:"staff_group_id" binding:"required"`
-	MinimumCount int       `json:"minimum_count" binding:"required,min=0"`
-}
-
 type ConstraintsUpdate struct {
 	DayOfWeek              int                     `json:"day_of_week" binding:"required"`
 	StaffGroupRequirements []StaffGroupRequirement `json:"staff_group_requirements" binding:"required"`

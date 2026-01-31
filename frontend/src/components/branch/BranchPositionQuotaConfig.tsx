@@ -124,6 +124,10 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
 
       setQuotas(quotasMap);
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0ee72595-fb2a-4cfb-9b7a-6463c0da4d1f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BranchPositionQuotaConfig.tsx:127',message:'loadData: received constraints from API',data:{branchId,constraintsCount:constraintsData.length,constraints:constraintsData.map(c=>({day:c.day_of_week,is_overridden:c.is_overridden,reqCount:c.staff_group_requirements?.length||0}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
+
       // Create a map of constraints by day_of_week
       const constraintsMap = new Map<number, BranchConstraints>();
       constraintsData.forEach((constraint) => {
@@ -155,6 +159,10 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
           }
         }
       }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0ee72595-fb2a-4cfb-9b7a-6463c0da4d1f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BranchPositionQuotaConfig.tsx:159',message:'loadData: final constraints map before setting state',data:{branchId,constraints:Array.from(constraintsMap.entries()).map(([day,c])=>({day,is_overridden:c.is_overridden,reqCount:c.staff_group_requirements?.length||0}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
 
       setConstraints(constraintsMap);
     } catch (err: any) {
@@ -238,7 +246,29 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
     if (!constraint) return;
 
     // Get or create staff group requirements array
-    const staffGroupRequirements = constraint.staff_group_requirements || [];
+    let staffGroupRequirements = constraint.staff_group_requirements || [];
+    
+    // If this constraint was inherited (not overridden), we need to ensure ALL staff groups
+    // are represented in the requirements array before making changes.
+    // This preserves all inherited values when converting to an override.
+    if (!constraint.is_overridden && staffGroups.length > 0) {
+      // Create a map of existing requirements by staff group ID
+      const existingReqMap = new Map<string, number>();
+      staffGroupRequirements.forEach(req => {
+        existingReqMap.set(req.staff_group_id, req.minimum_count);
+      });
+      
+      // Initialize requirements for ALL staff groups with their current values from the constraint
+      // If a staff group isn't in the existing requirements, it defaults to 0
+      // This ensures we preserve all inherited values when converting to override
+      staffGroupRequirements = staffGroups.map(sg => {
+        const existingValue = existingReqMap.get(sg.id);
+        return {
+          staff_group_id: sg.id,
+          minimum_count: existingValue !== undefined ? existingValue : 0,
+        };
+      });
+    }
     
     // Find existing requirement for this staff group
     const existingIndex = staffGroupRequirements.findIndex(
@@ -254,7 +284,7 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
         minimum_count: value,
       };
     } else {
-      // Add new requirement
+      // Add new requirement (shouldn't happen if we initialized all staff groups above, but handle it)
       updatedRequirements = [
         ...staffGroupRequirements,
         {
@@ -264,13 +294,19 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
       ];
     }
 
-    // Remove requirements with 0 count (cleanup)
-    updatedRequirements = updatedRequirements.filter(req => req.minimum_count > 0);
+    // IMPORTANT: When converting from inherited to override, we should NOT filter out zeros yet
+    // because we want to preserve the fact that some staff groups have zero requirements.
+    // Only filter zeros if this was already an override (to allow users to clear values).
+    // However, when saving, the backend expects only non-zero requirements for overrides.
+    // So we'll keep zeros in the local state for display, but filter them when saving.
+    // For now, keep all requirements (including zeros) in the local state.
+    // The save function will filter them appropriately.
 
     const updatedConstraint = { 
       ...constraint,
       staff_group_requirements: updatedRequirements,
-      is_overridden: true, // Mark as overridden when user changes it
+      // Mark as overridden when user changes it (even if some values are zero)
+      is_overridden: true,
     };
     setConstraints(new Map(constraints.set(dayOfWeek, updatedConstraint)));
     setError(null);
@@ -321,12 +357,30 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
       setConstraints(constraintsMap);
       
       // Save the reset constraints (they will be marked as not overridden)
+      // When is_overridden is false, the backend will delete the constraint records
+      // so they inherit from branch type defaults
       const constraintsToUpdate: ConstraintsUpdate[] = Array.from(constraintsMap.values()).map((constraint) => ({
         day_of_week: constraint.day_of_week,
         staff_group_requirements: constraint.staff_group_requirements || [],
+        is_overridden: false, // Signal to backend to delete and inherit from branch type
       }));
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0ee72595-fb2a-4cfb-9b7a-6463c0da4d1f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BranchPositionQuotaConfig.tsx:332',message:'handleResetToDefaults: sending reset request',data:{branchId,constraintsCount:constraintsToUpdate.length,constraints:constraintsToUpdate.map(c=>({day:c.day_of_week,is_overridden:c.is_overridden,reqCount:c.staff_group_requirements.length}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+
       await branchConfigApi.updateConstraints(branchId, constraintsToUpdate);
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0ee72595-fb2a-4cfb-9b7a-6463c0da4d1f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BranchPositionQuotaConfig.tsx:336',message:'handleResetToDefaults: reset completed, reloading constraints',data:{branchId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+
+      // Reload constraints after reset to verify they're deleted
+      const reloadedConstraints = await branchConfigApi.getConstraints(branchId);
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0ee72595-fb2a-4cfb-9b7a-6463c0da4d1f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BranchPositionQuotaConfig.tsx:342',message:'handleResetToDefaults: reloaded constraints after reset',data:{branchId,constraintsCount:reloadedConstraints.length,constraints:reloadedConstraints.map(c=>({day:c.day_of_week,is_overridden:c.is_overridden,reqCount:c.staff_group_requirements?.length||0}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
       setSuccess('Constraints reset to branch type defaults');
     } catch (error: any) {
       setError(error.response?.data?.error || 'Failed to reset constraints');
@@ -340,13 +394,37 @@ export default function BranchPositionQuotaConfig({ branchId, onSave }: BranchPo
 
     try {
       // Convert constraints to update format with staff group requirements
-      const constraintsToUpdate: ConstraintsUpdate[] = Array.from(constraints.values()).map((constraint) => ({
-        day_of_week: constraint.day_of_week,
-        staff_group_requirements: (constraint.staff_group_requirements || []).map(req => ({
-          staff_group_id: req.staff_group_id,
-          minimum_count: req.minimum_count,
-        })),
-      }));
+      // IMPORTANT: Only send constraints that are actually overridden (have non-empty requirements)
+      // OR constraints that should be deleted (is_overridden: false)
+      // Don't send inherited constraints with empty requirements - they should inherit from branch type
+      const constraintsToUpdate: ConstraintsUpdate[] = Array.from(constraints.values())
+        .filter((constraint) => {
+          // Include if explicitly marked as not overridden (for deletion)
+          if (constraint.is_overridden === false) {
+            return true;
+          }
+          // Include if overridden AND has non-empty staff group requirements
+          const hasRequirements = constraint.staff_group_requirements && constraint.staff_group_requirements.length > 0;
+          return constraint.is_overridden === true && hasRequirements;
+        })
+        .map((constraint) => ({
+          day_of_week: constraint.day_of_week,
+          // Filter out zero requirements when saving - backend expects only non-zero requirements for overrides
+          // This ensures we only save the staff groups that actually have requirements
+          staff_group_requirements: (constraint.staff_group_requirements || [])
+            .filter(req => req.minimum_count > 0)
+            .map(req => ({
+              staff_group_id: req.staff_group_id,
+              minimum_count: req.minimum_count,
+            })),
+          // Preserve the is_overridden flag: false for deletion, true for override
+          // Since we've already filtered, this will be either false (for deletion) or true (for override with requirements)
+          is_overridden: constraint.is_overridden,
+        }));
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/0ee72595-fb2a-4cfb-9b7a-6463c0da4d1f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BranchPositionQuotaConfig.tsx:377',message:'handleSaveConstraints: filtered constraints to send',data:{branchId,totalConstraints:constraints.size,filteredCount:constraintsToUpdate.length,constraints:constraintsToUpdate.map(c=>({day:c.day_of_week,is_overridden:c.is_overridden,reqCount:c.staff_group_requirements.length}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
 
       await branchConfigApi.updateConstraints(branchId, constraintsToUpdate);
       setSuccess('Constraints updated successfully');

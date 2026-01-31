@@ -84,6 +84,7 @@ type ScheduleRepository interface {
 	Create(schedule *models.StaffSchedule) error
 	GetByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.StaffSchedule, error)
 	GetByStaffID(staffID uuid.UUID, startDate, endDate time.Time) ([]*models.StaffSchedule, error)
+	GetByStaffIDs(staffIDs []uuid.UUID, startDate, endDate time.Time) (map[uuid.UUID][]*models.StaffSchedule, error)
 	Update(schedule *models.StaffSchedule) error
 	Delete(id uuid.UUID) error
 	DeleteByStaffID(staffID uuid.UUID) error
@@ -447,4 +448,30 @@ type RotationStaffBranchPositionRepository interface {
 	Update(mapping *models.RotationStaffBranchPosition) error
 	Delete(id uuid.UUID) error
 	DeleteByStaffAndPosition(rotationStaffID uuid.UUID, branchPositionID uuid.UUID) error
+}
+
+type AllocationSuggestionRepository interface {
+	Create(suggestion *models.AllocationSuggestion) error
+	GetByID(id uuid.UUID) (*models.AllocationSuggestion, error)
+	Update(suggestion *models.AllocationSuggestion) error
+	Delete(id uuid.UUID) error
+	List(filters AllocationSuggestionFilters) ([]*models.AllocationSuggestion, error)
+	GetByBranchID(branchID uuid.UUID, startDate, endDate time.Time) ([]*models.AllocationSuggestion, error)
+	GetByDateRange(startDate, endDate time.Time) ([]*models.AllocationSuggestion, error)
+}
+
+type AllocationSuggestionFilters struct {
+	BranchID        *uuid.UUID
+	RotationStaffID *uuid.UUID
+	PositionID      *uuid.UUID
+	Status          *models.SuggestionStatus
+	StartDate       *time.Time
+	EndDate         *time.Time
+}
+
+type BranchQuotaSummaryRepository interface {
+	GetByBranchIDAndDate(branchID uuid.UUID, date time.Time) (*models.BranchQuotaSummary, error)
+	GetByBranchIDsAndDate(branchIDs []uuid.UUID, date time.Time) ([]*models.BranchQuotaSummary, error)
+	Recalculate(branchID uuid.UUID, date time.Time) error
+	RecalculateForDateRange(branchID uuid.UUID, startDate, endDate time.Time) error
 }

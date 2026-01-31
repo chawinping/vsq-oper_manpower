@@ -13,29 +13,33 @@ import (
 // RepositoriesWrapper wraps postgres repositories to provide a unified interface
 // RepositoriesWrapper wraps repository interfaces for use cases
 type RepositoriesWrapper struct {
-	User                  interfaces.UserRepository
-	Role                  interfaces.RoleRepository
-	Staff                 interfaces.StaffRepository
-	Position              interfaces.PositionRepository
-	Branch                interfaces.BranchRepository
-	EffectiveBranch       interfaces.EffectiveBranchRepository
-	Revenue               interfaces.RevenueRepository
-	Schedule              interfaces.ScheduleRepository
-	Rotation              interfaces.RotationRepository
-	Settings              interfaces.SettingsRepository
-	AllocationRule        interfaces.AllocationRuleRepository
-	AreaOfOperation       interfaces.AreaOfOperationRepository
-	AllocationCriteria    interfaces.AllocationCriteriaRepository
-	PositionQuota         interfaces.PositionQuotaRepository
-	Doctor                interfaces.DoctorRepository
-	DoctorPreference      interfaces.DoctorPreferenceRepository
-	DoctorAssignment      interfaces.DoctorAssignmentRepository
-	DoctorOnOffDay        interfaces.DoctorOnOffDayRepository
-	BranchType            interfaces.BranchTypeRepository
-	StaffGroup            interfaces.StaffGroupRepository
-	StaffGroupPosition    interfaces.StaffGroupPositionRepository
-	BranchTypeRequirement interfaces.BranchTypeStaffGroupRequirementRepository
+	User                        interfaces.UserRepository
+	Role                        interfaces.RoleRepository
+	Staff                       interfaces.StaffRepository
+	Position                    interfaces.PositionRepository
+	Branch                      interfaces.BranchRepository
+	EffectiveBranch             interfaces.EffectiveBranchRepository
+	Revenue                     interfaces.RevenueRepository
+	Schedule                    interfaces.ScheduleRepository
+	Rotation                    interfaces.RotationRepository
+	Settings                    interfaces.SettingsRepository
+	AllocationRule              interfaces.AllocationRuleRepository
+	AreaOfOperation             interfaces.AreaOfOperationRepository
+	AllocationCriteria          interfaces.AllocationCriteriaRepository
+	PositionQuota               interfaces.PositionQuotaRepository
+	Doctor                      interfaces.DoctorRepository
+	DoctorPreference            interfaces.DoctorPreferenceRepository
+	DoctorAssignment            interfaces.DoctorAssignmentRepository
+	DoctorOnOffDay              interfaces.DoctorOnOffDayRepository
+	BranchType                  interfaces.BranchTypeRepository
+	StaffGroup                  interfaces.StaffGroupRepository
+	StaffGroupPosition          interfaces.StaffGroupPositionRepository
+	BranchTypeRequirement       interfaces.BranchTypeStaffGroupRequirementRepository
+	BranchTypeConstraints       interfaces.BranchTypeConstraintsRepository
+	BranchConstraints           interfaces.BranchConstraintsRepository
 	RotationStaffBranchPosition interfaces.RotationStaffBranchPositionRepository
+	AllocationSuggestion        interfaces.AllocationSuggestionRepository
+	BranchQuotaSummary          interfaces.BranchQuotaSummaryRepository
 }
 
 // CriteriaEngine evaluates allocation criteria across the three pillars

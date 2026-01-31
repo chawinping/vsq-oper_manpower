@@ -67,6 +67,22 @@ func RunMigrations(db *sql.DB) error {
 		createClinicPreferencePositionRequirementsTable,
 		createSpecificPreferencesTable,
 		createRotationStaffBranchPositionsTable,
+		// Performance optimization indexes - Phase 1
+		addPerformanceIndexesStaffSchedules,
+		addPerformanceIndexesPositionQuotas,
+		addPerformanceIndexesRotationAssignments,
+		addPerformanceIndexesBranchConstraints,
+		addPerformanceIndexesStaff,
+		addPerformanceIndexesDoctorAssignments,
+		// Performance optimization - Phase 2: Summary Tables
+		createBranchQuotaDailySummaryTable,
+		createPositionQuotaDailySummaryTable,
+		createRecalculateBranchQuotaSummaryFunction,
+		createQuotaSummaryTriggers,
+		populateInitialQuotaSummaries,
+		// Performance optimization - Phase 3: Materialized Views
+		createBranchQuotaStatusMaterializedView,
+		createRefreshQuotaCacheFunction,
 	}
 
 	for _, migration := range migrations {
@@ -516,6 +532,22 @@ func runDataMigrations(db *sql.DB) error {
 	// Add revenue type columns to revenue_data and branch_weekly_revenue tables
 	if _, err := db.Exec(addRevenueTypeColumns); err != nil {
 		return fmt.Errorf("failed to add revenue type columns: %w", err)
+	}
+
+	// Add revenue_source column to revenue_data table if it doesn't exist
+	_, err = db.Exec(`
+		DO $$ 
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns 
+				WHERE table_name = 'revenue_data' AND column_name = 'revenue_source'
+			) THEN
+				ALTER TABLE revenue_data ADD COLUMN revenue_source VARCHAR(20) DEFAULT 'branch' CHECK (revenue_source IN ('branch', 'doctor', 'excel'));
+			END IF;
+		END $$;
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to add revenue_source column: %w", err)
 	}
 
 	// Migrate existing expected_revenue to skin_revenue
@@ -1663,3 +1695,490 @@ func linkBranchManagersToBranches(db *sql.DB) error {
 
 	return rows.Err()
 }
+
+// Performance optimization indexes - Phase 1: Critical Indexes
+// These indexes significantly improve query performance for quota calculations
+
+// Indexes for staff_schedules table (CRITICAL - most queried table)
+const addPerformanceIndexesStaffSchedules = `
+-- Composite index for staff + date queries (most common query pattern)
+CREATE INDEX IF NOT EXISTS idx_staff_schedules_staff_date 
+ON staff_schedules(staff_id, date DESC);
+
+-- Composite index for branch + date + status queries
+CREATE INDEX IF NOT EXISTS idx_staff_schedules_branch_date_status 
+ON staff_schedules(branch_id, date, schedule_status) 
+WHERE schedule_status = 'working';
+
+-- Index for date queries (used for date range filtering)
+CREATE INDEX IF NOT EXISTS idx_staff_schedules_date 
+ON staff_schedules(date DESC);
+
+-- Composite index for date + status filtering
+CREATE INDEX IF NOT EXISTS idx_staff_schedules_date_status 
+ON staff_schedules(date DESC, schedule_status);
+`
+
+// Indexes for position_quotas table
+const addPerformanceIndexesPositionQuotas = `
+-- Composite index for branch + active status queries
+CREATE INDEX IF NOT EXISTS idx_position_quotas_branch_active 
+ON position_quotas(branch_id, is_active) 
+WHERE is_active = true;
+
+-- Index for position lookups
+CREATE INDEX IF NOT EXISTS idx_position_quotas_position_active 
+ON position_quotas(position_id, is_active) 
+WHERE is_active = true;
+`
+
+// Indexes for rotation_assignments table
+const addPerformanceIndexesRotationAssignments = `
+-- Composite index for branch + date queries
+CREATE INDEX IF NOT EXISTS idx_rotation_assignments_branch_date 
+ON rotation_assignments(branch_id, date DESC);
+
+-- Composite index for staff + date queries
+CREATE INDEX IF NOT EXISTS idx_rotation_assignments_staff_date 
+ON rotation_assignments(rotation_staff_id, date DESC);
+
+-- Index for date queries
+CREATE INDEX IF NOT EXISTS idx_rotation_assignments_date 
+ON rotation_assignments(date DESC);
+`
+
+// Indexes for branch_constraints table
+const addPerformanceIndexesBranchConstraints = `
+-- Composite index for branch + day_of_week lookups
+CREATE INDEX IF NOT EXISTS idx_branch_constraints_branch_day 
+ON branch_constraints(branch_id, day_of_week);
+
+-- Index for day_of_week queries
+CREATE INDEX IF NOT EXISTS idx_branch_constraints_day 
+ON branch_constraints(day_of_week);
+`
+
+// Indexes for staff table
+const addPerformanceIndexesStaff = `
+-- Composite index for branch + position + type queries
+CREATE INDEX IF NOT EXISTS idx_staff_branch_position_type 
+ON staff(branch_id, position_id, staff_type) 
+WHERE staff_type = 'branch';
+
+-- Index for rotation staff queries
+CREATE INDEX IF NOT EXISTS idx_staff_type_position 
+ON staff(staff_type, position_id) 
+WHERE staff_type = 'rotation';
+
+-- Index for branch staff lookups
+CREATE INDEX IF NOT EXISTS idx_staff_branch_type 
+ON staff(branch_id, staff_type) 
+WHERE staff_type = 'branch';
+`
+
+// Indexes for doctor_assignments table
+const addPerformanceIndexesDoctorAssignments = `
+-- Composite index for branch + date queries
+CREATE INDEX IF NOT EXISTS idx_doctor_assignments_branch_date 
+ON doctor_assignments(branch_id, date DESC);
+
+-- Composite index for doctor + date queries
+CREATE INDEX IF NOT EXISTS idx_doctor_assignments_doctor_date 
+ON doctor_assignments(doctor_id, date DESC);
+
+-- Index for date queries  
+CREATE INDEX IF NOT EXISTS idx_doctor_assignments_date 
+ON doctor_assignments(date DESC);
+`
+
+// Performance optimization - Phase 2: Summary Tables
+// Pre-computed quota statuses for fast queries
+
+// Branch quota daily summary table
+const createBranchQuotaDailySummaryTable = `
+CREATE TABLE IF NOT EXISTS branch_quota_daily_summary (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    
+    -- Aggregated counts
+    total_designated INTEGER NOT NULL DEFAULT 0,
+    total_available INTEGER NOT NULL DEFAULT 0,
+    total_assigned INTEGER NOT NULL DEFAULT 0,
+    total_required INTEGER NOT NULL DEFAULT 0,
+    
+    -- Group scores
+    group1_score INTEGER NOT NULL DEFAULT 0,
+    group2_score INTEGER NOT NULL DEFAULT 0,
+    group3_score INTEGER NOT NULL DEFAULT 0,
+    
+    -- Missing staff (JSONB for flexibility)
+    group1_missing_staff JSONB DEFAULT '[]'::jsonb,
+    group2_missing_staff JSONB DEFAULT '[]'::jsonb,
+    group3_missing_staff JSONB DEFAULT '[]'::jsonb,
+    
+    -- Metadata
+    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(branch_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quota_summary_branch_date 
+ON branch_quota_daily_summary(branch_id, date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quota_summary_date 
+ON branch_quota_daily_summary(date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quota_summary_branch 
+ON branch_quota_daily_summary(branch_id);
+`
+
+// Position quota daily summary table
+const createPositionQuotaDailySummaryTable = `
+CREATE TABLE IF NOT EXISTS position_quota_daily_summary (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+    position_id UUID NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    
+    designated_quota INTEGER NOT NULL DEFAULT 0,
+    minimum_required INTEGER NOT NULL DEFAULT 0,
+    available_local INTEGER NOT NULL DEFAULT 0,
+    assigned_rotation INTEGER NOT NULL DEFAULT 0,
+    total_assigned INTEGER NOT NULL DEFAULT 0,
+    still_required INTEGER NOT NULL DEFAULT 0,
+    
+    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(branch_id, position_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_position_summary_branch_date 
+ON position_quota_daily_summary(branch_id, date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_position_summary_position_date 
+ON position_quota_daily_summary(position_id, date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_position_summary_date 
+ON position_quota_daily_summary(date DESC);
+`
+
+// Function to recalculate branch quota summary
+const createRecalculateBranchQuotaSummaryFunction = `
+CREATE OR REPLACE FUNCTION recalculate_branch_quota_summary(
+    p_branch_id UUID,
+    p_date DATE
+)
+RETURNS void AS $$
+DECLARE
+    v_total_designated INTEGER := 0;
+    v_total_available INTEGER := 0;
+    v_total_assigned INTEGER := 0;
+    v_total_required INTEGER := 0;
+    v_group1_score INTEGER := 0;
+    v_group2_score INTEGER := 0;
+    v_group3_score INTEGER := 0;
+    v_group1_missing JSONB := '[]'::jsonb;
+    v_group2_missing JSONB := '[]'::jsonb;
+    v_group3_missing JSONB := '[]'::jsonb;
+    v_position_record RECORD;
+    v_staff_record RECORD;
+    v_rotation_count INTEGER;
+    v_branch_count INTEGER;
+    v_shortage INTEGER;
+    v_excess INTEGER;
+    v_total_assigned_pos INTEGER;
+    v_still_required_pos INTEGER;
+    v_excess_pos INTEGER;
+BEGIN
+    -- Calculate position-level summaries
+    FOR v_position_record IN
+        SELECT 
+            pq.position_id,
+            pq.designated_quota,
+            pq.minimum_required,
+            COUNT(DISTINCT CASE 
+                WHEN s.staff_type = 'branch' 
+                AND ss.schedule_status = 'working' 
+                THEN s.id 
+            END) AS available_local,
+            COUNT(DISTINCT ra.rotation_staff_id) AS assigned_rotation
+        FROM position_quotas pq
+        LEFT JOIN staff s ON s.branch_id = pq.branch_id 
+            AND s.position_id = pq.position_id 
+            AND s.staff_type = 'branch'
+        LEFT JOIN staff_schedules ss ON ss.staff_id = s.id 
+            AND ss.date = p_date
+        LEFT JOIN rotation_assignments ra ON ra.branch_id = pq.branch_id 
+            AND ra.date = p_date
+        LEFT JOIN staff rs ON rs.id = ra.rotation_staff_id 
+            AND rs.position_id = pq.position_id
+        WHERE pq.branch_id = p_branch_id 
+            AND pq.is_active = true
+        GROUP BY pq.position_id, pq.designated_quota, pq.minimum_required
+    LOOP
+        v_total_assigned_pos := v_position_record.available_local + v_position_record.assigned_rotation;
+        v_still_required_pos := GREATEST(0, v_position_record.minimum_required - v_total_assigned_pos);
+        
+        -- Update position summary
+        INSERT INTO position_quota_daily_summary (
+            branch_id, position_id, date,
+            designated_quota, minimum_required,
+            available_local, assigned_rotation, total_assigned, still_required,
+            calculated_at
+        ) VALUES (
+            p_branch_id, v_position_record.position_id, p_date,
+            v_position_record.designated_quota, v_position_record.minimum_required,
+            v_position_record.available_local, v_position_record.assigned_rotation,
+            v_total_assigned_pos, v_still_required_pos,
+            CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (branch_id, position_id, date) 
+        DO UPDATE SET
+            designated_quota = EXCLUDED.designated_quota,
+            minimum_required = EXCLUDED.minimum_required,
+            available_local = EXCLUDED.available_local,
+            assigned_rotation = EXCLUDED.assigned_rotation,
+            total_assigned = EXCLUDED.total_assigned,
+            still_required = EXCLUDED.still_required,
+            calculated_at = CURRENT_TIMESTAMP;
+        
+        -- Accumulate totals
+        v_total_designated := v_total_designated + v_position_record.designated_quota;
+        v_total_available := v_total_available + v_position_record.available_local;
+        v_total_assigned := v_total_assigned + v_total_assigned_pos;
+        v_total_required := v_total_required + v_still_required_pos;
+        
+        -- Group 2 score (Position Quota - Minimum Shortage)
+        IF v_still_required_pos > 0 THEN
+            v_group2_score := v_group2_score - v_still_required_pos;
+        END IF;
+        
+        -- Group 3 score (Position Quota - Preferred Excess)
+        v_excess_pos := v_total_assigned_pos - v_position_record.designated_quota;
+        IF v_excess_pos > 0 THEN
+            v_group3_score := v_group3_score + v_excess_pos;
+        END IF;
+    END LOOP;
+    
+    -- Calculate Group 1 score (Daily Staff Constraints - Minimum Shortage)
+    -- This is simplified - full calculation would require staff group logic
+    -- For now, we'll calculate it based on missing staff from schedules
+    SELECT 
+        COALESCE(SUM(CASE 
+            WHEN ss.schedule_status != 'working' THEN 1 
+            ELSE 0 
+        END), 0) INTO v_group1_score
+    FROM staff s
+    LEFT JOIN staff_schedules ss ON ss.staff_id = s.id AND ss.date = p_date
+    WHERE s.branch_id = p_branch_id AND s.staff_type = 'branch';
+    
+    -- Update branch summary
+    INSERT INTO branch_quota_daily_summary (
+        branch_id, date,
+        total_designated, total_available, total_assigned, total_required,
+        group1_score, group2_score, group3_score,
+        group1_missing_staff, group2_missing_staff, group3_missing_staff,
+        calculated_at, updated_at
+    ) VALUES (
+        p_branch_id, p_date,
+        v_total_designated, v_total_available, v_total_assigned, v_total_required,
+        v_group1_score, v_group2_score, v_group3_score,
+        v_group1_missing, v_group2_missing, v_group3_missing,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    )
+    ON CONFLICT (branch_id, date) 
+    DO UPDATE SET
+        total_designated = EXCLUDED.total_designated,
+        total_available = EXCLUDED.total_available,
+        total_assigned = EXCLUDED.total_assigned,
+        total_required = EXCLUDED.total_required,
+        group1_score = EXCLUDED.group1_score,
+        group2_score = EXCLUDED.group2_score,
+        group3_score = EXCLUDED.group3_score,
+        group1_missing_staff = EXCLUDED.group1_missing_staff,
+        group2_missing_staff = EXCLUDED.group2_missing_staff,
+        group3_missing_staff = EXCLUDED.group3_missing_staff,
+        updated_at = CURRENT_TIMESTAMP;
+END;
+$$ LANGUAGE plpgsql;
+`
+
+// Triggers to automatically update summaries when data changes
+const createQuotaSummaryTriggers = `
+-- Trigger function for schedule changes
+CREATE OR REPLACE FUNCTION update_quota_summary_on_schedule_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM recalculate_branch_quota_summary(
+        COALESCE(NEW.branch_id, OLD.branch_id),
+        COALESCE(NEW.date, OLD.date)
+    );
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for staff_schedules changes
+DROP TRIGGER IF EXISTS schedule_change_quota_update ON staff_schedules;
+CREATE TRIGGER schedule_change_quota_update
+AFTER INSERT OR UPDATE OR DELETE ON staff_schedules
+FOR EACH ROW
+EXECUTE FUNCTION update_quota_summary_on_schedule_change();
+
+-- Trigger function for rotation assignment changes
+CREATE OR REPLACE FUNCTION update_quota_summary_on_rotation_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM recalculate_branch_quota_summary(
+        COALESCE(NEW.branch_id, OLD.branch_id),
+        COALESCE(NEW.date, OLD.date)
+    );
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for rotation_assignments changes
+DROP TRIGGER IF EXISTS rotation_change_quota_update ON rotation_assignments;
+CREATE TRIGGER rotation_change_quota_update
+AFTER INSERT OR UPDATE OR DELETE ON rotation_assignments
+FOR EACH ROW
+EXECUTE FUNCTION update_quota_summary_on_rotation_change();
+
+-- Trigger function for position quota changes
+CREATE OR REPLACE FUNCTION update_quota_summary_on_quota_change()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_date DATE;
+BEGIN
+    -- Recalculate for next 30 days
+    FOR v_date IN 
+        SELECT generate_series(CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', INTERVAL '1 day')::DATE
+    LOOP
+        PERFORM recalculate_branch_quota_summary(
+            COALESCE(NEW.branch_id, OLD.branch_id),
+            v_date
+        );
+    END LOOP;
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for position_quotas changes
+DROP TRIGGER IF EXISTS quota_change_summary_update ON position_quotas;
+CREATE TRIGGER quota_change_summary_update
+AFTER INSERT OR UPDATE OR DELETE ON position_quotas
+FOR EACH ROW
+EXECUTE FUNCTION update_quota_summary_on_quota_change();
+`
+
+// Populate initial quota summaries for next 30 days for all branches
+const populateInitialQuotaSummaries = `
+DO $$
+DECLARE
+    v_branch RECORD;
+    v_date DATE;
+BEGIN
+    -- Populate summaries for next 30 days for all active branches
+    FOR v_branch IN SELECT id FROM branches
+    LOOP
+        FOR v_date IN 
+            SELECT generate_series(CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', INTERVAL '1 day')::DATE
+        LOOP
+            -- Only calculate if summary doesn't exist
+            IF NOT EXISTS (
+                SELECT 1 FROM branch_quota_daily_summary 
+                WHERE branch_id = v_branch.id AND date = v_date
+            ) THEN
+                PERFORM recalculate_branch_quota_summary(v_branch.id, v_date);
+            END IF;
+        END LOOP;
+    END LOOP;
+END $$;
+`
+
+// Performance optimization - Phase 3: Materialized Views
+// Pre-computed views for historical and analytical queries
+
+// Materialized view for branch quota status (30-day rolling window)
+const createBranchQuotaStatusMaterializedView = `
+-- Drop existing view if it exists
+DROP MATERIALIZED VIEW IF EXISTS branch_quota_status_cache CASCADE;
+
+-- Create materialized view with 30-day rolling window
+CREATE MATERIALIZED VIEW branch_quota_status_cache AS
+SELECT 
+    bqs.branch_id,
+    bqs.date,
+    bqs.total_designated,
+    bqs.total_available,
+    bqs.total_assigned,
+    bqs.total_required,
+    bqs.group1_score,
+    bqs.group2_score,
+    bqs.group3_score,
+    bqs.group1_missing_staff,
+    bqs.group2_missing_staff,
+    bqs.group3_missing_staff,
+    bqs.calculated_at,
+    bqs.updated_at,
+    b.name AS branch_name,
+    b.code AS branch_code
+FROM branch_quota_daily_summary bqs
+INNER JOIN branches b ON b.id = bqs.branch_id
+WHERE bqs.date >= CURRENT_DATE - INTERVAL '30 days'
+    AND bqs.date <= CURRENT_DATE + INTERVAL '30 days';
+
+-- Create indexes on materialized view for fast queries
+CREATE INDEX idx_quota_cache_branch_date 
+ON branch_quota_status_cache(branch_id, date DESC);
+
+CREATE INDEX idx_quota_cache_date 
+ON branch_quota_status_cache(date DESC);
+
+CREATE INDEX idx_quota_cache_branch 
+ON branch_quota_status_cache(branch_id);
+
+-- Create unique index for fast lookups
+CREATE UNIQUE INDEX idx_quota_cache_branch_date_unique 
+ON branch_quota_status_cache(branch_id, date);
+`
+
+// Function to refresh materialized view (can be called via cron)
+const createRefreshQuotaCacheFunction = `
+CREATE OR REPLACE FUNCTION refresh_branch_quota_cache()
+RETURNS void AS $$
+DECLARE
+    v_branch RECORD;
+    v_date DATE;
+BEGIN
+    -- Refresh the materialized view
+    -- This will rebuild it with current data from branch_quota_daily_summary
+    REFRESH MATERIALIZED VIEW CONCURRENTLY branch_quota_status_cache;
+    
+    -- Also ensure summaries exist for the next 30 days
+    FOR v_branch IN SELECT id FROM branches
+    LOOP
+        FOR v_date IN 
+            SELECT generate_series(CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', INTERVAL '1 day')::DATE
+        LOOP
+            -- Only calculate if summary doesn't exist
+            IF NOT EXISTS (
+                SELECT 1 FROM branch_quota_daily_summary 
+                WHERE branch_id = v_branch.id AND date = v_date
+            ) THEN
+                PERFORM recalculate_branch_quota_summary(v_branch.id, v_date);
+            END IF;
+        END LOOP;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create a simpler refresh function that just refreshes the view
+CREATE OR REPLACE FUNCTION refresh_quota_cache_simple()
+RETURNS void AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW CONCURRENTLY branch_quota_status_cache;
+END;
+$$ LANGUAGE plpgsql;
+`

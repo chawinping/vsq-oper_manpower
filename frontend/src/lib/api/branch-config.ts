@@ -70,6 +70,7 @@ export interface BranchConstraints {
 export interface ConstraintsUpdate {
   day_of_week: number;
   staff_group_requirements: StaffGroupRequirement[];
+  is_overridden?: boolean; // If false, delete the constraint to inherit from branch type
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -108,6 +109,12 @@ export const branchConfigApi = {
   },
 
   updateConstraints: async (branchId: string, constraints: ConstraintsUpdate[]): Promise<void> => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/0ee72595-fb2a-4cfb-9b7a-6463c0da4d1f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'branch-config.ts:111',message:'updateConstraints: API call starting',data:{branchId,constraintsCount:constraints.length,constraints:constraints.map(c=>({day:c.day_of_week,is_overridden:c.is_overridden,reqCount:c.staff_group_requirements.length}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     await apiClient.put(`/branches/${branchId}/config/constraints`, { constraints });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/0ee72595-fb2a-4cfb-9b7a-6463c0da4d1f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'branch-config.ts:114',message:'updateConstraints: API call completed',data:{branchId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
   },
 };
